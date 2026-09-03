@@ -1,28 +1,36 @@
 // ---------------------------------------------------------------------------
-// GridOverlay — infinite, adaptive grid lines rendered as an SVG pattern
+// GridOverlay — adaptive grid lines for the current frame
 // ---------------------------------------------------------------------------
-// The SVG fills the entire viewport (position:fixed, full screen). The grid
-// lines are drawn using a <pattern> that tiles across the whole view.
+// The grid is drawn BELOW the notes layer, so notes show as clean colour
+// blocks until you zoom in and "enter" one — at which point the grid appears
+// across its interior.
 //
-// Adaptive spacing (Desmos-style):
-//   The "logical" cell size at the current zoom is BASE_CELL_PX * zoom.
-//   When that rendered size gets too small or too large we scale the level
-//   up/down by powers of 5, so lines never crowd or disappear. A second set
-//   of "major" lines is drawn every 5 cells at a higher opacity.
+// Region: at the root the grid covers the whole canvas in theme colours.
+// Inside a note it is clipped to that note's interior rect, and the line
+// colour is chosen to contrast with the note's fill (dark lines on light
+// notes, light lines on dark notes).
+//
+// Adaptive spacing (Desmos-style): the rendered minor cell size is kept
+// within [TARGET_MIN_PX, TARGET_MAX_PX] by stepping in powers of 5, so lines
+// never crowd or disappear. Major lines are drawn every 5 minor cells.
 // ---------------------------------------------------------------------------
 
 import { useMemo } from "react";
 import { useCanvasStore } from "../../store/canvasStore";
+import { useNotesStore } from "../../store/notesStore";
 import { useSettingsStore, THEME_COLORS } from "../../store/settingsStore";
-import { BASE_CELL_PX } from "../../types";
+import { BASE_CELL_PX, INTERIOR_SPAN } from "../../types";
+import { cellPxFor } from "../../lib/coordinates";
 
 // Target rendered size range for minor cells (pixels on screen)
 const TARGET_MIN_PX = 20;
 const TARGET_MAX_PX = 120;
+// Keep the clamped grid slightly larger than the viewport
+const CLAMP_MARGIN_PX = 100;
 
 /**
- * Pick a cell size (in world units) such that its rendered pixel size stays
- * within [TARGET_MIN_PX, TARGET_MAX_PX]. Increments / decrements by ×5.
+ * Pick a cell size such that its rendered pixel size stays within
+ * [TARGET_MIN_PX, TARGET_MAX_PX]. Increments / decrements by ×5.
  */
 function adaptiveCellSize(zoom: number): number {
   let cellPx = BASE_CELL_PX * zoom;
@@ -33,12 +41,35 @@ function adaptiveCellSize(zoom: number): number {
   return cellPx; // this is already the screen-pixel size of one minor cell
 }
 
+/** Line colours that contrast with a note's fill colour. */
+function linesForNoteColor(color: string): { minor: string; major: string } {
+  const hex = color.replace("#", "");
+  if (hex.length === 6) {
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    if (luminance < 0.5) {
+      // Dark note — light lines
+      return {
+        minor: "rgba(255,255,255,0.14)",
+        major: "rgba(255,255,255,0.30)",
+      };
+    }
+  }
+  // Light note (or unparseable colour) — dark lines
+  return { minor: "rgba(0,0,0,0.10)", major: "rgba(0,0,0,0.24)" };
+}
+
 export function GridOverlay() {
   const pan = useCanvasStore((s) => s.pan);
   const zoom = useCanvasStore((s) => s.zoom);
+  const frameId = useCanvasStore((s) => s.frameId);
   const theme = useSettingsStore((s) => s.theme);
   const showGridLines = useSettingsStore((s) => s.showGridLines);
-  const { minorLine, majorLine } = THEME_COLORS[theme];
+  // Re-render when notes mutate (e.g. the frame note is recoloured).
+  const version = useNotesStore((s) => s.version);
+  void version;
 
   // Minor cell size in screen pixels
   const minorPx = useMemo(() => adaptiveCellSize(zoom), [zoom]);
@@ -47,21 +78,47 @@ export function GridOverlay() {
 
   if (!showGridLines) return null;
 
-  // Pattern offset — shift the pattern so (0,0) in world space is always a
-  // grid intersection, regardless of where the user has panned.
-  const offsetX = ((pan.x % majorPx) + majorPx) % majorPx;
-  const offsetY = ((pan.y % majorPx) + majorPx) % majorPx;
+  // Region + colours: whole canvas at the root, the note's interior when
+  // inside one.
+  const themeColors = THEME_COLORS[theme];
+  let minorLine = themeColors.minorLine;
+  let majorLine = themeColors.majorLine;
+  let left = 0;
+  let top = 0;
+  let right = window.innerWidth;
+  let bottom = window.innerHeight;
+
+  if (frameId) {
+    const note = useNotesStore.getState().getNote(frameId);
+    if (note) {
+      const lines = linesForNoteColor(note.color);
+      minorLine = lines.minor;
+      majorLine = lines.major;
+    }
+    const edge = INTERIOR_SPAN * cellPxFor(zoom);
+    left = Math.max(pan.x, -CLAMP_MARGIN_PX);
+    top = Math.max(pan.y, -CLAMP_MARGIN_PX);
+    right = Math.min(pan.x + edge, window.innerWidth + CLAMP_MARGIN_PX);
+    bottom = Math.min(pan.y + edge, window.innerHeight + CLAMP_MARGIN_PX);
+    if (right <= left || bottom <= top) return null;
+  }
+
+  // Pattern offset — align grid intersections with the frame origin. Pattern
+  // coordinates are relative to the SVG's own top-left corner (left/top).
+  const offsetX = (((pan.x - left) % majorPx) + majorPx) % majorPx;
+  const offsetY = (((pan.y - top) % majorPx) + majorPx) % majorPx;
 
   return (
     <svg
       style={{
         position: "fixed",
-        inset: 0,
-        width: "100%",
-        height: "100%",
+        left,
+        top,
+        width: right - left,
+        height: bottom - top,
         pointerEvents: "none",
-        // Above notes so the grid stays continuous when you zoom into a note.
-        zIndex: 2,
+        // Below the notes layer: notes cover the grid until you enter them.
+        zIndex: 0,
       }}
     >
       <defs>
@@ -100,7 +157,7 @@ export function GridOverlay() {
         </pattern>
       </defs>
 
-      {/* Fill the entire viewport with tiled minor lines */}
+      {/* Fill the region with tiled minor lines */}
       <rect width="100%" height="100%" fill="url(#minor-grid)" />
       {/* Overlay major lines */}
       <rect width="100%" height="100%" fill="url(#major-grid)" />

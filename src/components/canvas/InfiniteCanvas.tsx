@@ -2,12 +2,13 @@
 // InfiniteCanvas — the main canvas viewport
 // ---------------------------------------------------------------------------
 // Layering (back to front):
-//   viewport background  — dark canvas colour, captures pointer/wheel events
-//   FrameBorder (z 0)    — current note's interior colour + boundary edges
+//   viewport background  — canvas colour, captures pointer/wheel events
+//   FrameBorder (z 0)    — backdrops for the current note and its ancestors
+//   GridOverlay (z 0)    — grid lines over the current frame's interior only,
+//                          below notes so un-entered notes stay clean
 //   NotesLayer  (z 1)    — sticky notes, drawn in screen space
-//   GridOverlay (z 2)    — grid lines, kept above notes for continuity
 //   PlacementOverlay(z3) — translucent square preview while placing
-//   CanvasControls (z10) — HUD (reset, place button)
+//   CanvasControls (z10) — HUD (reset, settings, place button)
 //
 // Notes are positioned directly in screen pixels (computed from the current
 // frame's pan/zoom), so there is no CSS world-transform layer to manage.
@@ -54,8 +55,8 @@ export function InfiniteCanvas() {
       }}
     >
       <FrameBorder />
-      <NotesLayer />
       <GridOverlay />
+      <NotesLayer />
       <PlacementOverlay />
       <CanvasControls />
       <NoteContextMenu />
