@@ -13,22 +13,39 @@ import { useState } from "react";
 import {
   INTERIOR_SPAN,
   MIN_INTERACT_PX,
+  MIN_RENDER_PX,
   NOTE_INVALID_STROKE,
+  SELECTION_STROKE,
   TITLE_BAR_CELLS,
   TITLE_HOVER_OVERLAY,
   type Note,
   type ScreenRect,
 } from "../../types";
 import { useNotesStore } from "../../store/notesStore";
+import { useWidgetsStore } from "../../store/widgetsStore";
 import { useUiStore } from "../../store/uiStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useNoteDrag } from "../../hooks/useNoteDrag";
 import { useNoteResize, type Corner } from "../../hooks/useNoteResize";
+import { TextBlockView } from "./TextBlockView";
 
 interface NoteViewProps {
   note: Note;
   rect: ScreenRect;
   interactive: boolean;
+}
+
+/** True if this note is the one being dragged/resized, or nested inside it. */
+function isInLiftedSubtree(note: Note, liftedId: string | null): boolean {
+  if (!liftedId) return false;
+  let current: Note | undefined = note;
+  while (current) {
+    if (current.id === liftedId) return true;
+    current = current.parentId
+      ? useNotesStore.getState().getNote(current.parentId)
+      : undefined;
+  }
+  return false;
 }
 
 export function NoteView({ note, rect, interactive }: NoteViewProps) {
@@ -39,12 +56,25 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
   const { invalid: dragInvalid, dragHandlers } = useNoteDrag(note);
   const { invalid: resizeInvalid, handlersFor } = useNoteResize(note);
   const showNoteIds = useSettingsStore((s) => s.showNoteIds);
+  const liftedNoteIds = useUiStore((s) => s.liftedNoteIds);
+  const selected = useUiStore((s) => s.selectedNoteIds.includes(note.id));
+  const selectionInvalid = useUiStore((s) => s.selectionInvalid);
+  const multi = useUiStore(
+    (s) => s.selectedNoteIds.length + s.selectedWidgetIds.length > 1
+  );
 
-  const invalid = dragInvalid || resizeInvalid;
   const titleBarHeight = rect.h * (TITLE_BAR_CELLS / INTERIOR_SPAN);
   const isInteractive = interactive && rect.w >= MIN_INTERACT_PX;
   const isEditing = editingNoteId === note.id;
   const fontSize = Math.max(9, Math.min(16, titleBarHeight * 0.45));
+  const widgetsVersion = useWidgetsStore((s) => s.version);
+  void widgetsVersion;
+  const hostedWidgets = useWidgetsStore.getState().getForNote(note.id);
+  const innerCellPx = rect.w / INTERIOR_SPAN;
+  const moving = liftedNoteIds.includes(note.id);
+  const lifted = liftedNoteIds.some((id) => isInLiftedSubtree(note, id));
+  const invalid =
+    dragInvalid || resizeInvalid || (selectionInvalid && moving);
 
   return (
     <div
@@ -56,10 +86,15 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
         height: rect.h,
         background: note.color,
         boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
-        outline: invalid ? `2px solid ${NOTE_INVALID_STROKE}` : "none",
+        outline: invalid
+          ? `2px solid ${NOTE_INVALID_STROKE}`
+          : selected
+            ? `2px solid ${SELECTION_STROKE}`
+            : "none",
         outlineOffset: -1,
         pointerEvents: "none",
         overflow: "visible",
+        zIndex: lifted ? 3 : 0,
       }}
     >
       {/* id label — toggleable in settings */}
@@ -113,6 +148,7 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
           pointerEvents: isInteractive ? "auto" : "none",
           padding: "0 8px",
           boxSizing: "border-box",
+          zIndex: 4,
         }}
       >
         {isEditing ? (
@@ -135,9 +171,30 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
         )}
       </div>
 
+      {hostedWidgets.map((widget) => {
+        const w = widget.width * innerCellPx;
+        const h = widget.height * innerCellPx;
+        if (w < MIN_RENDER_PX || h < MIN_RENDER_PX) return null;
+        return (
+          <TextBlockView
+            key={widget.id}
+            widget={widget}
+            rect={{
+              x: widget.x * innerCellPx,
+              y: widget.y * innerCellPx,
+              w,
+              h,
+            }}
+            cellPx={innerCellPx}
+            interactive={false}
+          />
+        );
+      })}
+
       {/* Corner resize handles */}
       {isInteractive &&
         !isEditing &&
+        !multi &&
         CORNERS.map((corner) => (
           <div
             key={corner}
@@ -170,7 +227,7 @@ function cornerHandleStyle(corner: Corner): React.CSSProperties {
     background: "transparent",
     cursor: corner === "nw" || corner === "se" ? "nwse-resize" : "nesw-resize",
     pointerEvents: "auto",
-    zIndex: 1,
+    zIndex: 5,
   };
 }
 

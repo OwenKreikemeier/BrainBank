@@ -1,29 +1,19 @@
 // ---------------------------------------------------------------------------
 // useNoteResize — resize a note by dragging one of its corners
 // ---------------------------------------------------------------------------
-// Only used for notes that are direct children of the current frame (same
-// condition as title-bar dragging). The corner opposite the one being dragged
-// stays fixed; the note stays a perfect square, snapped to whole cells.
-//
-// Validity follows the same rules as placing/moving:
-//   • may not overlap a sibling note
-//   • nested notes must stay within the parent's borders and below its title band
-//   • never smaller than MIN_NOTE_CELLS
-// While invalid the note shows a red outline; releasing then reverts the
-// original rect. Children scale with the parent automatically (their positions
-// are relative to the parent's interior), so they can never stick out.
+// The opposite corner stays fixed and the note stays a perfect square. Size
+// follows the cursor smoothly. Overlapping a sibling (or leaving the parent)
+// turns the outline red; on release the result snaps to whole cells, or
+// reverts if that snap would still be illegal.
 // ---------------------------------------------------------------------------
 
 import { useRef, useState } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import { useNotesStore } from "../store/notesStore";
-import { screenToCell, squaresOverlap } from "../lib/coordinates";
-import {
-  INTERIOR_SPAN,
-  MIN_NOTE_CELLS,
-  TITLE_BAR_CELLS,
-  type Note,
-} from "../types";
+import { useUiStore } from "../store/uiStore";
+import { screenToCell } from "../lib/coordinates";
+import { isValidNoteRect } from "../lib/noteValidity";
+import { MIN_NOTE_CELLS, type Note } from "../types";
 
 /** Which corner is being dragged: [n|s][w|e] */
 export type Corner = "nw" | "ne" | "sw" | "se";
@@ -34,24 +24,47 @@ interface ResizeState {
   origY: number;
   origSize: number;
   changed: boolean;
-  invalid: boolean;
+}
+
+function rectFromCorner(
+  corner: Corner,
+  origX: number,
+  origY: number,
+  origSize: number,
+  size: number
+): { x: number; y: number; size: number } {
+  return {
+    x: corner[1] === "w" ? origX + origSize - size : origX,
+    y: corner[0] === "n" ? origY + origSize - size : origY,
+    size,
+  };
 }
 
 export function useNoteResize(note: Note) {
   const [invalid, setInvalid] = useState(false);
   const resize = useRef<ResizeState | null>(null);
 
+  function markInvalid(bad: boolean) {
+    setInvalid(bad);
+    useUiStore.getState().setSelectionInvalid(bad);
+  }
+
   function onPointerDown(corner: Corner, e: React.PointerEvent) {
     if (e.button !== 0) return;
     e.stopPropagation();
+    const ui = useUiStore.getState();
+    if (!ui.selectedNoteIds.includes(note.id)) {
+      ui.selectNote(note.id, false);
+    }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    ui.setLiftedNotes([note.id]);
+    setInvalid(false);
     resize.current = {
       corner,
       origX: note.x,
       origY: note.y,
       origSize: note.size,
       changed: false,
-      invalid: false,
     };
   }
 
@@ -62,7 +75,6 @@ export function useNoteResize(note: Note) {
     const { pan, zoom } = useCanvasStore.getState();
     const cursor = screenToCell(e.clientX, e.clientY, pan, zoom);
 
-    // Distance from the FIXED (opposite) corner to the cursor, per axis.
     const spanX =
       st.corner[1] === "e"
         ? cursor.cx - st.origX
@@ -72,60 +84,58 @@ export function useNoteResize(note: Note) {
         ? cursor.cy - st.origY
         : st.origY + st.origSize - cursor.cy;
 
-    // Perfect square, snapped to whole cells, never below the minimum.
-    const size = Math.max(MIN_NOTE_CELLS, Math.round(Math.max(spanX, spanY)));
+    const liveSize = Math.max(0.05, Math.max(spanX, spanY));
+    const live = rectFromCorner(st.corner, st.origX, st.origY, st.origSize, liveSize);
 
-    // Keep the opposite corner fixed.
-    const x = st.corner[1] === "w" ? st.origX + st.origSize - size : st.origX;
-    const y = st.corner[0] === "n" ? st.origY + st.origSize - size : st.origY;
-
-    if (x !== st.origX || y !== st.origY || size !== st.origSize) {
+    if (live.x !== st.origX || live.y !== st.origY || live.size !== st.origSize) {
       st.changed = true;
     }
 
-    const notes = useNotesStore.getState();
-    const overlaps = notes
-      .getChildren(note.parentId)
-      .some(
-        (sib) =>
-          sib.id !== note.id &&
-          squaresOverlap({ x, y, size }, { x: sib.x, y: sib.y, size: sib.size })
-      );
-
-    const outOfBounds =
-      note.parentId !== null &&
-      (x < 0 ||
-        y < TITLE_BAR_CELLS ||
-        x + size > INTERIOR_SPAN ||
-        y + size > INTERIOR_SPAN);
-
-    const isInvalid = overlaps || outOfBounds;
-    st.invalid = isInvalid;
-    setInvalid(isInvalid);
-    notes.resizeNote(note.id, x, y, size);
+    markInvalid(!isValidNoteRect(live, note.parentId, note.id));
+    useNotesStore.getState().resizeNote(note.id, live.x, live.y, live.size);
   }
 
   function onPointerUp(e: React.PointerEvent) {
     const st = resize.current;
     if (!st) return;
     resize.current = null;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // already released
+    }
+    const ui = useUiStore.getState();
+    ui.setLiftedNotes([]);
+    setInvalid(false);
 
     const notes = useNotesStore.getState();
-    if (st.invalid) {
-      notes.resizeNote(note.id, st.origX, st.origY, st.origSize); // revert
-      setInvalid(false);
-    } else if (st.changed) {
-      notes.persistNote(note.id);
+    const live = notes.getNote(note.id);
+    if (!live) {
+      ui.setSelectionInvalid(false);
+      return;
     }
+
+    const snapSize = Math.max(MIN_NOTE_CELLS, Math.round(live.size));
+    const snap = rectFromCorner(st.corner, st.origX, st.origY, st.origSize, snapSize);
+    const bad = !isValidNoteRect(snap, note.parentId, note.id);
+
+    if (bad || !st.changed) {
+      notes.resizeNote(note.id, st.origX, st.origY, st.origSize);
+      ui.setSelectionInvalid(false);
+      return;
+    }
+
+    notes.resizeNote(note.id, snap.x, snap.y, snap.size);
+    notes.persistNote(note.id);
+    ui.setSelectionInvalid(false);
   }
 
-  /** Pointer handlers for one corner handle. */
   function handlersFor(corner: Corner) {
     return {
       onPointerDown: (e: React.PointerEvent) => onPointerDown(corner, e),
       onPointerMove,
       onPointerUp,
+      onPointerCancel: onPointerUp,
     };
   }
 

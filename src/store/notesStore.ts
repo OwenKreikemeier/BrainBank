@@ -19,6 +19,7 @@
 import { create } from "zustand";
 import { db } from "../db/database";
 import { NOTE_COLOR, type Note, type NoteType } from "../types";
+import { useWidgetsStore } from "./widgetsStore";
 
 const ROOT_KEY = "root";
 
@@ -231,6 +232,7 @@ export const useNotesStore = create<NotesStore>((set, get) => ({
 
     set((s) => ({ version: s.version + 1 }));
     void db.notes.bulkDelete(removed);
+    useWidgetsStore.getState().deleteForNotes(removed);
   },
 
   getNote(id) {

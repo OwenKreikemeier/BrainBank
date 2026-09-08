@@ -2,10 +2,13 @@
 // uiStore — transient interaction / overlay state (Zustand)
 // ---------------------------------------------------------------------------
 // Keeps canvasStore focused on the viewport. This holds which note is being
-// renamed, the open right-click menu, and the delete-confirmation modal.
+// renamed, the open right-click menu, the delete-confirmation modal, and the
+// current multi-selection of notes and text widgets.
 // ---------------------------------------------------------------------------
 
 import { create } from "zustand";
+import { useNotesStore } from "./notesStore";
+import { useWidgetsStore } from "./widgetsStore";
 
 export interface ContextMenuState {
   noteId: string;
@@ -27,6 +30,18 @@ interface UiStore {
   confirmDelete: ConfirmDeleteState | null;
   /** Whether the settings modal is open */
   settingsOpen: boolean;
+  /** Notes currently being dragged or resized — rendered above siblings */
+  liftedNoteIds: string[];
+  /** Notes in the current selection */
+  selectedNoteIds: string[];
+  /** Text widgets in the current selection */
+  selectedWidgetIds: string[];
+  /** Primary selected widget (last clicked) — drives the text toolbar */
+  selectedWidgetId: string | null;
+  /** True while a group/item drag is in an illegal spot */
+  selectionInvalid: boolean;
+  /** Whether the + tool tray is expanded */
+  toolMenuOpen: boolean;
 
   setEditingNote: (id: string | null) => void;
   openContextMenu: (menu: ContextMenuState) => void;
@@ -34,13 +49,31 @@ interface UiStore {
   openConfirmDelete: (state: ConfirmDeleteState) => void;
   closeConfirmDelete: () => void;
   setSettingsOpen: (open: boolean) => void;
+  setLiftedNotes: (ids: string[]) => void;
+  setSelectedWidget: (id: string | null) => void;
+  selectNote: (id: string, additive: boolean) => void;
+  selectWidget: (id: string, additive: boolean) => void;
+  clearSelection: () => void;
+  pruneSelection: (frameId: string | null) => void;
+  setSelectionInvalid: (invalid: boolean) => void;
+  setToolMenuOpen: (open: boolean) => void;
 }
 
-export const useUiStore = create<UiStore>((set) => ({
+function toggleId(list: string[], id: string): string[] {
+  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+}
+
+export const useUiStore = create<UiStore>((set, get) => ({
   editingNoteId: null,
   contextMenu: null,
   confirmDelete: null,
   settingsOpen: false,
+  liftedNoteIds: [],
+  selectedNoteIds: [],
+  selectedWidgetIds: [],
+  selectedWidgetId: null,
+  selectionInvalid: false,
+  toolMenuOpen: false,
 
   setEditingNote(id) {
     set({ editingNoteId: id });
@@ -59,5 +92,90 @@ export const useUiStore = create<UiStore>((set) => ({
   },
   setSettingsOpen(open) {
     set({ settingsOpen: open });
+  },
+  setLiftedNotes(ids) {
+    set({ liftedNoteIds: ids });
+  },
+  setSelectedWidget(id) {
+    if (!id) {
+      set({
+        selectedWidgetId: null,
+        selectedWidgetIds: [],
+        selectedNoteIds: [],
+        selectionInvalid: false,
+      });
+      return;
+    }
+    set({
+      selectedWidgetId: id,
+      selectedWidgetIds: [id],
+      selectedNoteIds: [],
+      selectionInvalid: false,
+    });
+  },
+  selectNote(id, additive) {
+    if (additive) {
+      const selectedNoteIds = toggleId(get().selectedNoteIds, id);
+      set({ selectedNoteIds, selectionInvalid: false });
+      return;
+    }
+    set({
+      selectedNoteIds: [id],
+      selectedWidgetIds: [],
+      selectedWidgetId: null,
+      selectionInvalid: false,
+    });
+  },
+  selectWidget(id, additive) {
+    if (additive) {
+      const selectedWidgetIds = toggleId(get().selectedWidgetIds, id);
+      set({
+        selectedWidgetIds,
+        selectedWidgetId: selectedWidgetIds[selectedWidgetIds.length - 1] ?? null,
+        selectionInvalid: false,
+      });
+      return;
+    }
+    set({
+      selectedWidgetIds: [id],
+      selectedWidgetId: id,
+      selectedNoteIds: [],
+      selectionInvalid: false,
+    });
+  },
+  clearSelection() {
+    set({
+      selectedNoteIds: [],
+      selectedWidgetIds: [],
+      selectedWidgetId: null,
+      selectionInvalid: false,
+    });
+  },
+  pruneSelection(frameId) {
+    const notes = useNotesStore.getState();
+    const widgets = useWidgetsStore.getState();
+    const { selectedNoteIds, selectedWidgetIds } = get();
+    const nextNotes = selectedNoteIds.filter((id) => {
+      const n = notes.getNote(id);
+      return n !== undefined && n.parentId === frameId;
+    });
+    const nextWidgets =
+      frameId === null
+        ? []
+        : selectedWidgetIds.filter((id) => {
+            const w = widgets.getWidget(id);
+            return w !== undefined && w.noteId === frameId;
+          });
+    set({
+      selectedNoteIds: nextNotes,
+      selectedWidgetIds: nextWidgets,
+      selectedWidgetId: nextWidgets[nextWidgets.length - 1] ?? null,
+    });
+  },
+  setSelectionInvalid(invalid) {
+    set({ selectionInvalid: invalid });
+  },
+  setToolMenuOpen(open) {
+    set({ toolMenuOpen: open });
   },
 }));

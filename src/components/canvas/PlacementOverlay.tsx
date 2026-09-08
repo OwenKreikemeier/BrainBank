@@ -1,9 +1,5 @@
 // ---------------------------------------------------------------------------
-// PlacementOverlay — the translucent square preview while drawing a note
-// ---------------------------------------------------------------------------
-// Reads the snapped placement rect (in current-frame cells) from the store and
-// draws it in screen space as a Windows-style light-blue selection box. Turns
-// red when the square is invalid (overlaps an existing sibling note).
+// PlacementOverlay — translucent preview while drawing a note or text block
 // ---------------------------------------------------------------------------
 
 import { useCanvasStore } from "../../store/canvasStore";
@@ -23,7 +19,7 @@ export function PlacementOverlay() {
   if (!rect) return null;
 
   const topLeft = cellToScreen(rect.x, rect.y, pan, zoom);
-  const sizePx = rect.size * cellPxFor(zoom);
+  const cellPx = cellPxFor(zoom);
 
   return (
     <div
@@ -31,11 +27,10 @@ export function PlacementOverlay() {
         position: "fixed",
         left: topLeft.x,
         top: topLeft.y,
-        width: sizePx,
-        height: sizePx,
+        width: rect.width * cellPx,
+        height: rect.height * cellPx,
         background: SELECTION_FILL,
         border: `1.5px solid ${valid ? SELECTION_STROKE : SELECTION_INVALID_STROKE}`,
-        borderRadius: 2,
         pointerEvents: "none",
         zIndex: 3,
       }}

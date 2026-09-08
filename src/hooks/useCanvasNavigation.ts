@@ -4,33 +4,28 @@
 // Attach to the viewport element ref. Two modes:
 //
 //   Normal mode    — drag pans, wheel zooms (zoom re-bases frames in the store)
-//   Placement mode — drag draws a snapped square preview; release creates a note
+//   Placement mode — drag draws a preview; release creates a note or text block
 //
 // Native listeners read live state via getState() so the handlers stay stable
-// and never go stale. Pointer-downs that originate on the HUD are ignored, so
-// HUD buttons (like reset) keep working instead of being hijacked for panning.
+// and never go stale. Pointer-downs that originate on the HUD or a widget are
+// ignored, so those elements keep working instead of being hijacked for panning.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import { useNotesStore } from "../store/notesStore";
-import {
-  INTERIOR_SPAN,
-  MIN_NOTE_CELLS,
-  TITLE_BAR_CELLS,
-  ZOOM_SENSITIVITY,
-} from "../types";
-import { screenToCell, snapSquare, squaresOverlap } from "../lib/coordinates";
+import { useWidgetsStore } from "../store/widgetsStore";
+import { useUiStore } from "../store/uiStore";
+import { MIN_WIDGET_CELLS, ZOOM_SENSITIVITY } from "../types";
+import { screenToCell, snapSquare, liveSquare, liveRect } from "../lib/coordinates";
+import { isValidNoteRect, isValidWidgetGeom } from "../lib/noteValidity";
 
-/**
- * Should the canvas ignore this pointer-down? True for HUD chrome and for
- * interactive note elements (title bars), so their own handlers fire instead
- * of the canvas starting a pan.
- */
 function isHudTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
-    target.closest("[data-hud], [data-note-interactive]") !== null
+    target.closest(
+      "[data-hud], [data-note-interactive], [data-widget-interactive], [data-selection-interactive]"
+    ) !== null
   );
 }
 
@@ -45,49 +40,43 @@ export function useCanvasNavigation(
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
+    const viewport = el;
 
     const canvas = useCanvasStore.getState;
     const notes = useNotesStore.getState;
+    const widgets = useWidgetsStore.getState;
+    const ui = useUiStore.getState;
 
-    // Compute the snapped square + validity for the current drag position.
     function updatePlacementPreview(clientX: number, clientY: number) {
-      const { pan, zoom, frameId } = canvas();
+      const { pan, zoom, frameId, placementKind } = canvas();
       const current = screenToCell(clientX, clientY, pan, zoom);
-      const square = snapSquare(anchorCell.current, current);
 
-      // Inside a note, children must stay within the parent's borders and out
-      // of the reserved top title band. The root world has no bounds.
-      const inBounds =
-        frameId === null ||
-        (square.x >= 0 &&
-          square.y >= TITLE_BAR_CELLS &&
-          square.x + square.size <= INTERIOR_SPAN &&
-          square.y + square.size <= INTERIOR_SPAN);
+      if (placementKind === "text") {
+        const live = liveRect(anchorCell.current, current);
+        const valid =
+          frameId !== null &&
+          live.width >= MIN_WIDGET_CELLS &&
+          live.height >= MIN_WIDGET_CELLS &&
+          isValidWidgetGeom({ ...live, rotation: 0 }, frameId);
+        canvas().setPlacementPreview(live, valid);
+        return;
+      }
 
-      const valid =
-        square.size >= MIN_NOTE_CELLS &&
-        inBounds &&
-        !notes()
-          .getChildren(frameId)
-          .some((sibling) =>
-            squaresOverlap(square, {
-              x: sibling.x,
-              y: sibling.y,
-              size: sibling.size,
-            })
-          );
+      const live = liveSquare(anchorCell.current, current);
+      const snapped = snapSquare(anchorCell.current, current);
+      const valid = isValidNoteRect(snapped, frameId);
 
-      canvas().setPlacementPreview(square, valid);
+      canvas().setPlacementPreview(
+        { x: live.x, y: live.y, width: live.size, height: live.size },
+        valid
+      );
     }
 
-    // -----------------------------------------------------------------------
-    // Pointer down — start panning OR start drawing a note
-    // -----------------------------------------------------------------------
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return;
-      if (isHudTarget(e.target)) return; // let HUD buttons handle their click
+      if (isHudTarget(e.target)) return;
 
-      el!.setPointerCapture(e.pointerId);
+      viewport.setPointerCapture(e.pointerId);
 
       if (canvas().placementActive) {
         isPlacing.current = true;
@@ -97,55 +86,71 @@ export function useCanvasNavigation(
         return;
       }
 
+      ui().clearSelection();
+
       isPanning.current = true;
       lastPointer.current = { x: e.clientX, y: e.clientY };
-      el!.style.cursor = "grabbing";
+      viewport.style.cursor = "grabbing";
     }
 
-    // -----------------------------------------------------------------------
-    // Pointer move — pan OR update the square preview
-    // -----------------------------------------------------------------------
     function onPointerMove(e: PointerEvent) {
       if (isPlacing.current) {
         updatePlacementPreview(e.clientX, e.clientY);
         return;
       }
-      if (!isPanning.current) return;
-      const dx = e.clientX - lastPointer.current.x;
-      const dy = e.clientY - lastPointer.current.y;
-      lastPointer.current = { x: e.clientX, y: e.clientY };
-      canvas().movePan(dx, dy);
+      if (isPanning.current) {
+        const dx = e.clientX - lastPointer.current.x;
+        const dy = e.clientY - lastPointer.current.y;
+        lastPointer.current = { x: e.clientX, y: e.clientY };
+        canvas().movePan(dx, dy);
+      }
+      if (!canvas().placementActive) {
+        canvas().settleAt(e.clientX, e.clientY);
+        ui().pruneSelection(canvas().frameId);
+      }
     }
 
-    // -----------------------------------------------------------------------
-    // Pointer up — finish panning OR commit the note
-    // -----------------------------------------------------------------------
     function onPointerUp(e: PointerEvent) {
-      el!.releasePointerCapture(e.pointerId);
+      viewport.releasePointerCapture(e.pointerId);
 
       if (isPlacing.current) {
         isPlacing.current = false;
-        const { placementRect, placementValid, frameId } = canvas();
-        if (placementRect && placementValid) {
-          notes().addNote({
-            parentId: frameId,
-            x: placementRect.x,
-            y: placementRect.y,
-            size: placementRect.size,
-          });
+        const { pan, zoom, frameId, placementKind, placementValid } = canvas();
+        const current = screenToCell(e.clientX, e.clientY, pan, zoom);
+
+        if (placementKind === "text") {
+          const live = liveRect(anchorCell.current, current);
+          if (placementValid && frameId) {
+            const created = widgets().addWidget({
+              noteId: frameId,
+              x: live.x,
+              y: live.y,
+              width: live.width,
+              height: live.height,
+            });
+            ui().setSelectedWidget(created.id);
+          }
+        } else {
+          const snapped = snapSquare(anchorCell.current, current);
+          if (placementValid) {
+            notes().addNote({
+              parentId: frameId,
+              x: snapped.x,
+              y: snapped.y,
+              size: snapped.size,
+            });
+          }
         }
-        canvas().setPlacementActive(false); // one note per activation
+
+        canvas().setPlacementActive(false);
         return;
       }
 
       if (!isPanning.current) return;
       isPanning.current = false;
-      el!.style.cursor = "grab";
+      viewport.style.cursor = "grab";
     }
 
-    // -----------------------------------------------------------------------
-    // Wheel — zoom toward the cursor (the store handles frame rebasing)
-    // -----------------------------------------------------------------------
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const { zoom } = canvas();
@@ -153,28 +158,55 @@ export function useCanvasNavigation(
       canvas().zoomAtPoint(zoom * factor, e.clientX, e.clientY);
     }
 
-    // -----------------------------------------------------------------------
-    // Escape — cancel placement mode
-    // -----------------------------------------------------------------------
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && canvas().placementActive) {
-        canvas().setPlacementActive(false);
+      if (e.key === "Escape") {
+        if (canvas().placementActive) {
+          canvas().setPlacementActive(false);
+          return;
+        }
+        if (ui().toolMenuOpen) {
+          ui().setToolMenuOpen(false);
+          return;
+        }
+        if (
+          ui().selectedWidgetId ||
+          ui().selectedNoteIds.length > 0 ||
+          ui().selectedWidgetIds.length > 0
+        ) {
+          ui().clearSelection();
+        }
+        return;
+      }
+
+      if (e.key === "Delete") {
+        const target = e.target;
+        if (
+          target instanceof HTMLElement &&
+          (target.tagName === "TEXTAREA" || target.tagName === "INPUT")
+        ) {
+          return;
+        }
+        const ids = ui().selectedWidgetIds;
+        if (ids.length > 0) {
+          for (const id of ids) widgets().deleteWidget(id);
+          ui().clearSelection();
+        }
       }
     }
 
-    el.addEventListener("pointerdown", onPointerDown);
-    el.addEventListener("pointermove", onPointerMove);
-    el.addEventListener("pointerup", onPointerUp);
-    el.addEventListener("pointercancel", onPointerUp);
-    el.addEventListener("wheel", onWheel, { passive: false });
+    viewport.addEventListener("pointerdown", onPointerDown);
+    viewport.addEventListener("pointermove", onPointerMove);
+    viewport.addEventListener("pointerup", onPointerUp);
+    viewport.addEventListener("pointercancel", onPointerUp);
+    viewport.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      el.removeEventListener("pointerdown", onPointerDown);
-      el.removeEventListener("pointermove", onPointerMove);
-      el.removeEventListener("pointerup", onPointerUp);
-      el.removeEventListener("pointercancel", onPointerUp);
-      el.removeEventListener("wheel", onWheel);
+      viewport.removeEventListener("pointerdown", onPointerDown);
+      viewport.removeEventListener("pointermove", onPointerMove);
+      viewport.removeEventListener("pointerup", onPointerUp);
+      viewport.removeEventListener("pointercancel", onPointerUp);
+      viewport.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [viewportRef]);

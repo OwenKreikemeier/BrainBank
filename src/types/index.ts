@@ -33,6 +33,52 @@ export interface Note {
 }
 
 // ---------------------------------------------------------------------------
+// Widgets — tools placed on a note's interior (text blocks, later images, …)
+// Positions are in THAT note's interior cell units (INTERIOR_SPAN across).
+// Widgets never live on the root grid; deleting a note deletes its widgets.
+// ---------------------------------------------------------------------------
+
+export type WidgetType = "text";
+
+export type PlacementKind = "note" | "text";
+
+export type TextAlign = "left" | "center" | "right";
+
+export interface Widget {
+  id: string;
+  /** The note this widget is attached to */
+  noteId: string;
+  type: WidgetType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Rotation in degrees, clockwise */
+  rotation: number;
+  content: string;
+  fontFamily: string;
+  /** Font size in CSS px when one interior cell is BASE_CELL_PX on screen */
+  fontSize: number;
+  color: string;
+  align: TextAlign;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const TEXT_FONTS: { label: string; value: string }[] = [
+  { label: "Sans", value: "system-ui, sans-serif" },
+  { label: "Serif", value: "Georgia, 'Times New Roman', serif" },
+  { label: "Mono", value: "ui-monospace, Consolas, monospace" },
+  { label: "Comic", value: '"Comic Sans MS", "Comic Sans", cursive' },
+];
+
+export const DEFAULT_TEXT_FONT = TEXT_FONTS[0].value;
+export const DEFAULT_TEXT_COLOR = "#1a1a1a";
+export const DEFAULT_TEXT_FONT_SIZE = 22;
+export const DEFAULT_TEXT_ALIGN: TextAlign = "left";
+export const MIN_WIDGET_CELLS = 0.4;
+
+// ---------------------------------------------------------------------------
 // Viewport / geometry helpers
 // ---------------------------------------------------------------------------
 

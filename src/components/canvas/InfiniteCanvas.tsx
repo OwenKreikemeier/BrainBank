@@ -17,16 +17,20 @@
 import { useEffect, useRef } from "react";
 import { useCanvasStore } from "../../store/canvasStore";
 import { useNotesStore } from "../../store/notesStore";
+import { useWidgetsStore } from "../../store/widgetsStore";
 import { useSettingsStore, THEME_COLORS } from "../../store/settingsStore";
 import { useCanvasNavigation } from "../../hooks/useCanvasNavigation";
 import { GridOverlay } from "./GridOverlay";
 import { FrameBorder } from "./FrameBorder";
 import { NotesLayer } from "./NotesLayer";
+import { WidgetsLayer } from "./WidgetsLayer";
 import { PlacementOverlay } from "./PlacementOverlay";
 import { CanvasControls } from "./CanvasControls";
 import { NoteContextMenu } from "./NoteContextMenu";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { SettingsModal } from "./SettingsModal";
+import { SelectionFrame } from "./SelectionFrame";
+import { TextToolbar } from "./TextToolbar";
 
 export function InfiniteCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -35,14 +39,16 @@ export function InfiniteCanvas() {
 
   useCanvasNavigation(viewportRef);
 
-  // Hydrate the note cache from the local database once on startup.
   useEffect(() => {
     void useNotesStore.getState().loadAll();
+    void useWidgetsStore.getState().loadAll();
   }, []);
 
   return (
     <div
       ref={viewportRef}
+      role="application"
+      aria-label="Canvas"
       style={{
         position: "fixed",
         inset: 0,
@@ -57,8 +63,11 @@ export function InfiniteCanvas() {
       <FrameBorder />
       <GridOverlay />
       <NotesLayer />
+      <WidgetsLayer />
+      <SelectionFrame />
       <PlacementOverlay />
       <CanvasControls />
+      <TextToolbar />
       <NoteContextMenu />
       <ConfirmDeleteModal />
       <SettingsModal />

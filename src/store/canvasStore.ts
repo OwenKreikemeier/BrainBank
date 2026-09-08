@@ -18,6 +18,7 @@ import {
   REBASE_OUT_FACTOR,
   ROOT_MIN_ZOOM,
   type Pan,
+  type PlacementKind,
 } from "../types";
 import {
   cellPxFor,
@@ -28,11 +29,12 @@ import {
 } from "../lib/coordinates";
 import { useNotesStore } from "./notesStore";
 
-/** Snapped placement square, expressed in current-frame cell units. */
+/** Placement preview, expressed in current-frame cell units. */
 export interface PlacementRect {
   x: number;
   y: number;
-  size: number;
+  width: number;
+  height: number;
 }
 
 interface CanvasStore {
@@ -41,26 +43,26 @@ interface CanvasStore {
   pan: Pan;
   zoom: number;
 
-  /** Placement mode (drawing a new note) */
+  /** Placement mode (drawing a new note or text block) */
   placementActive: boolean;
+  placementKind: PlacementKind;
   placementRect: PlacementRect | null;
   placementValid: boolean;
 
   movePan: (dx: number, dy: number) => void;
   zoomAtPoint: (newZoom: number, focalX: number, focalY: number) => void;
+  /** Re-evaluate which note the viewport is inside, using the cursor as focus. */
+  settleAt: (focalX: number, focalY: number) => void;
   resetViewport: () => void;
 
-  setPlacementActive: (active: boolean) => void;
+  setPlacementActive: (active: boolean, kind?: PlacementKind) => void;
   setPlacementPreview: (rect: PlacementRect | null, valid: boolean) => void;
 }
 
 /**
- * Re-base the viewport as far in/out as the current zoom warrants. Runs after
- * every zoom so deep/fast zooms settle onto the right frame in one pass.
- *
- * `focalX/focalY` is the point we are zooming toward (the cursor). We enter the
- * child that sits under that point, so zooming in on a note reliably enters it
- * regardless of where the note is relative to the screen centre.
+ * Re-base the viewport as far in/out as the current zoom (and cursor) warrant.
+ * Called after zoom and while the pointer moves, so hovering a large-enough
+ * adjacent note switches into it without an extra zoom.
  */
 function settleFrame(
   frameId: string | null,
@@ -105,7 +107,34 @@ function settleFrame(
         break;
       }
     }
-    if (!entered) break;
+    if (entered) continue;
+
+    // --- Adjacent note: hovering a sibling that's large enough -> switch to it
+    if (frameId !== null) {
+      const frameNote = notes.getNote(frameId);
+      if (frameNote) {
+        const parentView = rebaseOut(pan, zoom, frameNote);
+        let switched = false;
+        for (const sib of notes.getChildren(frameNote.parentId)) {
+          if (sib.id === frameId) continue;
+          const rect = noteScreenRect(sib, parentView.pan, parentView.zoom);
+          if (
+            rect.w >= REBASE_IN_FACTOR * minScreen &&
+            pointInRect(focalX, focalY, rect)
+          ) {
+            const r = rebaseIn(parentView.pan, parentView.zoom, sib);
+            pan = r.pan;
+            zoom = r.zoom;
+            frameId = sib.id;
+            switched = true;
+            break;
+          }
+        }
+        if (switched) continue;
+      }
+    }
+
+    break;
   }
 
   return { frameId, pan, zoom };
@@ -117,6 +146,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   zoom: 1,
 
   placementActive: false,
+  placementKind: "note",
   placementRect: null,
   placementValid: true,
 
@@ -141,13 +171,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set(settled);
   },
 
+  settleAt(focalX, focalY) {
+    const { pan, zoom, frameId } = get();
+    set(settleFrame(frameId, pan, zoom, focalX, focalY));
+  },
+
   resetViewport() {
     set({ frameId: null, pan: { x: 0, y: 0 }, zoom: 1 });
   },
 
-  setPlacementActive(active) {
+  setPlacementActive(active, kind = "note") {
     set({
       placementActive: active,
+      placementKind: kind,
       placementRect: null,
       placementValid: true,
     });

@@ -93,17 +93,108 @@ export function snapSquare(
   return { x, y, size };
 }
 
+/**
+ * Same geometry as snapSquare, but unsnapped — follows the cursor continuously
+ * so a placement preview can move smoothly, then snap on mouse-up.
+ */
+export function liveSquare(
+  anchor: Cell,
+  current: Cell
+): { x: number; y: number; size: number } {
+  const dx = current.cx - anchor.cx;
+  const dy = current.cy - anchor.cy;
+  const size = Math.max(Math.abs(dx), Math.abs(dy), 0.05);
+  return {
+    x: dx >= 0 ? anchor.cx : anchor.cx - size,
+    y: dy >= 0 ? anchor.cy : anchor.cy - size,
+    size,
+  };
+}
+
+/**
+ * Axis-aligned rectangle from anchor to current cursor, in cell units.
+ * Used for freeform tools (text blocks) that are not forced to a square.
+ */
+export function liveRect(
+  anchor: Cell,
+  current: Cell
+): { x: number; y: number; width: number; height: number } {
+  const width = Math.max(Math.abs(current.cx - anchor.cx), 0.05);
+  const height = Math.max(Math.abs(current.cy - anchor.cy), 0.05);
+  return {
+    x: current.cx >= anchor.cx ? anchor.cx : anchor.cx - width,
+    y: current.cy >= anchor.cy ? anchor.cy : anchor.cy - height,
+    width,
+    height,
+  };
+}
+
+/** Axis-aligned box in cell space (notes and widgets). */
+export interface CellBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** Do two cell-space squares overlap? (used to forbid placing over siblings) */
 export function squaresOverlap(
   a: { x: number; y: number; size: number },
   b: { x: number; y: number; size: number }
 ): boolean {
-  return (
-    a.x < b.x + b.size &&
-    a.x + a.size > b.x &&
-    a.y < b.y + b.size &&
-    a.y + a.size > b.y
+  return boxesOverlap(
+    { x: a.x, y: a.y, width: a.size, height: a.size },
+    { x: b.x, y: b.y, width: b.size, height: b.size }
   );
+}
+
+export function boxesOverlap(a: CellBox, b: CellBox): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+/** Axis-aligned bounds of a (possibly rotated) rectangle. */
+export function rotatedAabb(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotationDeg = 0
+): CellBox {
+  const turn = ((rotationDeg % 360) + 360) % 360;
+  if (turn < 0.01 || Math.abs(turn - 360) < 0.01) {
+    return { x, y, width, height };
+  }
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const rad = (turn * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const hx = width / 2;
+  const hy = height / 2;
+  const corners: Array<[number, number]> = [
+    [-hx, -hy],
+    [hx, -hy],
+    [hx, hy],
+    [-hx, hy],
+  ];
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [lx, ly] of corners) {
+    const rx = cx + lx * cos - ly * sin;
+    const ry = cy + lx * sin + ly * cos;
+    if (rx < minX) minX = rx;
+    if (ry < minY) minY = ry;
+    if (rx > maxX) maxX = rx;
+    if (ry > maxY) maxY = ry;
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 /** Is a screen point inside a screen rect? */
