@@ -22,6 +22,7 @@
 import { useMemo } from "react";
 import { useCanvasStore } from "../../store/canvasStore";
 import { useNotesStore } from "../../store/notesStore";
+import { useUiStore } from "../../store/uiStore";
 import {
   INTERIOR_SPAN,
   MIN_RENDER_PX,
@@ -47,10 +48,12 @@ export function NotesLayer() {
   const frameId = useCanvasStore((s) => s.frameId);
   // Re-read the cache whenever notes change.
   const version = useNotesStore((s) => s.version);
+  const liftedNoteIds = useUiStore((s) => s.liftedNoteIds);
 
   const visible = useMemo<VisibleNote[]>(() => {
     void version; // dependency only — traversal reads the live cache below
     const notes = useNotesStore.getState();
+    const lifted = new Set(liftedNoteIds);
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const out: VisibleNote[] = [];
@@ -75,18 +78,23 @@ export function NotesLayer() {
           h: note.size * cellPx,
         };
 
+        // Keep a note that is being dragged/resized mounted even if it is
+        // off-screen or sub-pixel — unmounting would abort the gesture.
+        const keepMounted = lifted.has(note.id);
+
         // Cull: fully off-screen (the subtree is inside it, so skip it too)
         if (
-          rect.x + rect.w < 0 ||
-          rect.y + rect.h < 0 ||
-          rect.x > vw ||
-          rect.y > vh
+          !keepMounted &&
+          (rect.x + rect.w < 0 ||
+            rect.y + rect.h < 0 ||
+            rect.x > vw ||
+            rect.y > vh)
         ) {
           continue;
         }
 
         // Cull: too small to see
-        if (rect.w < MIN_RENDER_PX) continue;
+        if (!keepMounted && rect.w < MIN_RENDER_PX) continue;
 
         out.push({ note, rect });
 
@@ -128,12 +136,12 @@ export function NotesLayer() {
     }
 
     return out;
-  }, [pan, zoom, frameId, version]);
+  }, [pan, zoom, frameId, version, liftedNoteIds]);
 
   return (
     <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 1 }}>
       {visible.map(({ note, rect }) =>
-        rect.w > HUGE_RECT_PX ? (
+        rect.w > HUGE_RECT_PX && !liftedNoteIds.includes(note.id) ? (
           <HugeNoteRect key={note.id} note={note} rect={rect} />
         ) : (
           <NoteView

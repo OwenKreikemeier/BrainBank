@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// PlacementOverlay — translucent preview while drawing a note or text block
+// PlacementOverlay — translucent preview while drawing a note, text, or image
 // ---------------------------------------------------------------------------
 
 import { useCanvasStore } from "../../store/canvasStore";

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// WidgetsLayer — interactive text blocks on the current frame
+// WidgetsLayer — interactive widgets on the current frame
 // ---------------------------------------------------------------------------
 // Widgets that live on *visible notes* are drawn inside those notes (so they
 // move/resize with their host and stay visible). This layer only draws tools
@@ -11,7 +11,7 @@ import { useCanvasStore } from "../../store/canvasStore";
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { MIN_RENDER_PX, type ScreenRect, type Widget } from "../../types";
 import { cellPxFor, rotatedAabb } from "../../lib/coordinates";
-import { TextBlockView } from "./TextBlockView";
+import { WidgetView } from "./WidgetView";
 
 export function WidgetsLayer() {
   const pan = useCanvasStore((s) => s.pan);
@@ -66,7 +66,7 @@ export function WidgetsLayer() {
   return (
     <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 2 }}>
       {visible.map(({ widget, rect, cellPx }) => (
-        <TextBlockView
+        <WidgetView
           key={widget.id}
           widget={widget}
           rect={rect}

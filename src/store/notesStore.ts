@@ -18,7 +18,14 @@
 
 import { create } from "zustand";
 import { db } from "../db/database";
-import { NOTE_COLOR, type Note, type NoteType } from "../types";
+import {
+  DEFAULT_TITLE_COLOR,
+  DEFAULT_TITLE_FONT,
+  DEFAULT_TITLE_FONT_SIZE,
+  NOTE_COLOR,
+  type Note,
+  type NoteType,
+} from "../types";
 import { useWidgetsStore } from "./widgetsStore";
 
 const ROOT_KEY = "root";
@@ -46,12 +53,18 @@ interface NotesStore {
 
   loadAll: () => Promise<void>;
   addNote: (input: NewNoteInput) => Note;
+  /** Insert already-built notes (used when pasting a copied tree). */
+  importNotes: (notes: Note[]) => void;
   /** Cache-only position update (used during a live drag). */
   moveNote: (id: string, x: number, y: number) => void;
   /** Cache-only rect update (used during a live corner resize). */
   resizeNote: (id: string, x: number, y: number, size: number) => void;
   /** Persist the current cached note to disk (used when a drag commits). */
   persistNote: (id: string) => void;
+  /** Cache-only style update while the note menu is open. */
+  previewNote: (id: string, patch: Partial<Note>) => void;
+  /** Cache-only color update while dragging the picker. */
+  previewNoteColor: (id: string, color: string) => void;
   /** Update fields in cache + disk (e.g. color, title). */
   updateNote: (id: string, patch: Partial<Note>) => void;
   /** Delete a note and all of its descendants (cache + disk). */
@@ -116,8 +129,17 @@ export const useNotesStore = create<NotesStore>((set, get) => ({
         ...note,
         depth,
         title: note.title ?? "",
+        titleColor: note.titleColor ?? DEFAULT_TITLE_COLOR,
+        titleFontFamily: note.titleFontFamily ?? DEFAULT_TITLE_FONT,
+        titleFontSize: note.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE,
       };
-      if (fixed.depth !== note.depth || note.title === undefined) {
+      if (
+        fixed.depth !== note.depth ||
+        note.title === undefined ||
+        note.titleColor === undefined ||
+        note.titleFontFamily === undefined ||
+        note.titleFontSize === undefined
+      ) {
         toPersist.push(fixed);
       }
       byId.set(fixed.id, fixed);
@@ -153,6 +175,9 @@ export const useNotesStore = create<NotesStore>((set, get) => ({
       type: input.type ?? "text",
       color: input.color ?? NOTE_COLOR,
       title: input.title ?? "",
+      titleColor: DEFAULT_TITLE_COLOR,
+      titleFontFamily: DEFAULT_TITLE_FONT,
+      titleFontSize: DEFAULT_TITLE_FONT_SIZE,
       content: input.content ?? "",
       createdAt: now,
       updatedAt: now,
@@ -167,6 +192,20 @@ export const useNotesStore = create<NotesStore>((set, get) => ({
     set((s) => ({ version: s.version + 1 }));
     void db.notes.add(note);
     return note;
+  },
+
+  importNotes(notes) {
+    if (notes.length === 0) return;
+    const { byId, childrenByParent } = get();
+    for (const note of notes) {
+      byId.set(note.id, note);
+      const key = parentKey(note.parentId);
+      const list = childrenByParent.get(key) ?? [];
+      list.push(note.id);
+      childrenByParent.set(key, list);
+    }
+    set((s) => ({ version: s.version + 1 }));
+    void db.notes.bulkAdd(notes);
   },
 
   moveNote(id, x, y) {
@@ -191,6 +230,24 @@ export const useNotesStore = create<NotesStore>((set, get) => ({
     if (!note) return;
     note.updatedAt = new Date();
     void db.notes.put(note);
+  },
+
+  previewNote(id, patch) {
+    const note = get().byId.get(id);
+    if (!note) return;
+    let changed = false;
+    for (const key of Object.keys(patch) as (keyof Note)[]) {
+      const value = patch[key];
+      if (value !== undefined && note[key] !== value) {
+        Object.assign(note, { [key]: value });
+        changed = true;
+      }
+    }
+    if (changed) set((s) => ({ version: s.version + 1 }));
+  },
+
+  previewNoteColor(id, color) {
+    get().previewNote(id, { color });
   },
 
   updateNote(id, patch) {

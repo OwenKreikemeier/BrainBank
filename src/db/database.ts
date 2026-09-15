@@ -24,10 +24,11 @@ class BrainBankDatabase extends Dexie {
       notes: "id, parentId, depth",
     });
 
-    // widgets — tools attached to a note (text blocks, later images, …)
+    // widgets — tools attached to a note (text blocks, images, …)
     //   'id'     — uuid primary key
     //   'noteId' — the note this widget lives on (cascade-deleted with it)
-    //   'type'   — "text" | …
+    //   'type'   — "text" | "image" | …
+    // Extra fields (imageBlob, zIndex, …) are stored unindexed.
     this.version(2).stores({
       notes: "id, parentId, depth",
       widgets: "id, noteId, type",

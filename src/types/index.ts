@@ -26,6 +26,11 @@ export interface Note {
   color: string;
   /** Short title shown centered in the note's title bar */
   title: string;
+  /** Title text colour */
+  titleColor: string;
+  titleFontFamily: string;
+  /** Title size in CSS px when one parent cell is BASE_CELL_PX on screen */
+  titleFontSize: number;
   /** Text content / URL / reference depending on `type` */
   content: string;
   createdAt: Date;
@@ -38,9 +43,17 @@ export interface Note {
 // Widgets never live on the root grid; deleting a note deletes its widgets.
 // ---------------------------------------------------------------------------
 
-export type WidgetType = "text";
+export type WidgetType = "text" | "image";
 
-export type PlacementKind = "note" | "text";
+export type PlacementKind = "note" | "paste" | "text" | "image";
+
+export function isWidgetPlacement(kind: PlacementKind): boolean {
+  return kind === "text" || kind === "image";
+}
+
+export function isNotePlacement(kind: PlacementKind): boolean {
+  return kind === "note" || kind === "paste";
+}
 
 export type TextAlign = "left" | "center" | "right";
 
@@ -61,6 +74,10 @@ export interface Widget {
   fontSize: number;
   color: string;
   align: TextAlign;
+  /** Image payload for `type === "image"` widgets */
+  imageBlob?: Blob;
+  /** Stacking order on the host note; higher draws in front */
+  zIndex: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,8 +92,13 @@ export const TEXT_FONTS: { label: string; value: string }[] = [
 export const DEFAULT_TEXT_FONT = TEXT_FONTS[0].value;
 export const DEFAULT_TEXT_COLOR = "#1a1a1a";
 export const DEFAULT_TEXT_FONT_SIZE = 22;
+export const DEFAULT_TITLE_COLOR = "#1a1a1a";
+export const DEFAULT_TITLE_FONT = DEFAULT_TEXT_FONT;
+export const DEFAULT_TITLE_FONT_SIZE = 16;
 export const DEFAULT_TEXT_ALIGN: TextAlign = "left";
 export const MIN_WIDGET_CELLS = 0.4;
+
+export type WidgetLayerMove = "backward" | "forward" | "back" | "front";
 
 // ---------------------------------------------------------------------------
 // Viewport / geometry helpers
@@ -146,6 +168,16 @@ export const NOTE_PALETTE = [
   "#ff8fb1", // pink
   "#ffa94d", // orange
   "#c08bff", // purple
+];
+
+/** Preset title-text swatches offered in the note menu */
+export const TITLE_PALETTE = [
+  "#1a1a1a", // black
+  "#ffffff", // white
+  "#4a4a4a", // gray
+  "#1d4ed8", // blue
+  "#b91c1c", // red
+  "#15803d", // green
 ];
 
 /**

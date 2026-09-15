@@ -5,12 +5,17 @@
 // (pointerEvents: none) so the canvas underneath still pans/zooms and accepts
 // child placement. The TITLE BAR is interactive (only for direct children of
 // the current frame that are large enough): hover darkens it, double-click
-// renames, press+drag moves the note, right-click opens the context menu.
+// zooms into the note, press+drag moves the note, right-click opens the
+// context menu (rename lives there).
 // Corner handles allow resizing (opposite corner stays fixed, always square).
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
 import {
+  BASE_CELL_PX,
+  DEFAULT_TITLE_COLOR,
+  DEFAULT_TITLE_FONT,
+  DEFAULT_TITLE_FONT_SIZE,
   INTERIOR_SPAN,
   MIN_INTERACT_PX,
   MIN_RENDER_PX,
@@ -24,10 +29,12 @@ import {
 import { useNotesStore } from "../../store/notesStore";
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { useUiStore } from "../../store/uiStore";
+import { useCanvasStore } from "../../store/canvasStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useNoteDrag } from "../../hooks/useNoteDrag";
 import { useNoteResize, type Corner } from "../../hooks/useNoteResize";
-import { TextBlockView } from "./TextBlockView";
+import { fitSingleLineFont } from "../../lib/fitTextFont";
+import { WidgetView } from "./WidgetView";
 
 interface NoteViewProps {
   note: Note;
@@ -51,8 +58,8 @@ function isInLiftedSubtree(note: Note, liftedId: string | null): boolean {
 export function NoteView({ note, rect, interactive }: NoteViewProps) {
   const [hovered, setHovered] = useState(false);
   const editingNoteId = useUiStore((s) => s.editingNoteId);
-  const setEditingNote = useUiStore((s) => s.setEditingNote);
   const openContextMenu = useUiStore((s) => s.openContextMenu);
+  const enterNote = useCanvasStore((s) => s.enterNote);
   const { invalid: dragInvalid, dragHandlers } = useNoteDrag(note);
   const { invalid: resizeInvalid, handlersFor } = useNoteResize(note);
   const showNoteIds = useSettingsStore((s) => s.showNoteIds);
@@ -66,7 +73,25 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
   const titleBarHeight = rect.h * (TITLE_BAR_CELLS / INTERIOR_SPAN);
   const isInteractive = interactive && rect.w >= MIN_INTERACT_PX;
   const isEditing = editingNoteId === note.id;
-  const fontSize = Math.max(9, Math.min(16, titleBarHeight * 0.45));
+  const titlePadX = Math.min(8, Math.max(0, rect.w * 0.04));
+  const titleColor = note.titleColor ?? DEFAULT_TITLE_COLOR;
+  const titleFontFamily = note.titleFontFamily ?? DEFAULT_TITLE_FONT;
+  const titleFontSize = note.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE;
+  const cellPx = note.size > 0 ? rect.w / note.size : BASE_CELL_PX;
+  const titleTargetPx = Math.min(
+    Math.max(1, titleFontSize * (cellPx / BASE_CELL_PX)),
+    titleBarHeight * 0.85
+  );
+  const titleLabel = note.title || (isInteractive ? "Untitled" : "");
+  const titleFit = titleLabel
+    ? fitSingleLineFont({
+        content: titleLabel,
+        targetPx: titleTargetPx,
+        widthPx: Math.max(0, rect.w - titlePadX * 2),
+        fontFamily: titleFontFamily,
+      })
+    : { px: titleTargetPx, visible: false };
+  const editorFontSize = Math.max(9, titleTargetPx);
   const widgetsVersion = useWidgetsStore((s) => s.version);
   void widgetsVersion;
   const hostedWidgets = useWidgetsStore.getState().getForNote(note.id);
@@ -122,9 +147,10 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
         onPointerEnter={() => isInteractive && setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         onDoubleClick={(e) => {
-          if (!isInteractive) return;
+          if (!isInteractive || isEditing) return;
           e.stopPropagation();
-          setEditingNote(note.id);
+          e.preventDefault();
+          enterNote(note.id);
         }}
         onContextMenu={(e) => {
           if (!isInteractive) return;
@@ -146,27 +172,31 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
             isInteractive && hovered ? TITLE_HOVER_OVERLAY : "transparent",
           cursor: isInteractive ? (isEditing ? "text" : "grab") : "default",
           pointerEvents: isInteractive ? "auto" : "none",
-          padding: "0 8px",
+          padding: `0 ${titlePadX}px`,
           boxSizing: "border-box",
-          zIndex: 4,
+          zIndex: 10000,
         }}
       >
         {isEditing ? (
-          <TitleEditor note={note} fontSize={fontSize} />
+          <TitleEditor
+            note={note}
+            fontSize={editorFontSize}
+            fontFamily={titleFontFamily}
+            color={titleColor}
+          />
         ) : (
           <span
             style={{
-              fontSize,
+              fontSize: titleFit.px,
+              fontFamily: titleFontFamily,
               fontWeight: 600,
-              color: "rgba(0,0,0,0.78)",
+              color: titleColor,
               whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              maxWidth: "100%",
+              visibility: titleFit.visible ? "visible" : "hidden",
               pointerEvents: "none",
             }}
           >
-            {note.title || (isInteractive ? "Untitled" : "")}
+            {titleLabel}
           </span>
         )}
       </div>
@@ -176,7 +206,7 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
         const h = widget.height * innerCellPx;
         if (w < MIN_RENDER_PX || h < MIN_RENDER_PX) return null;
         return (
-          <TextBlockView
+          <WidgetView
             key={widget.id}
             widget={widget}
             rect={{
@@ -191,8 +221,9 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
         );
       })}
 
-      {/* Corner resize handles */}
-      {isInteractive &&
+      {/* Corner resize handles — stay mounted while this note is being
+          resized so shrinking below MIN_INTERACT_PX cannot drop capture. */}
+      {(isInteractive || moving) &&
         !isEditing &&
         !multi &&
         CORNERS.map((corner) => (
@@ -227,7 +258,8 @@ function cornerHandleStyle(corner: Corner): React.CSSProperties {
     background: "transparent",
     cursor: corner === "nw" || corner === "se" ? "nwse-resize" : "nesw-resize",
     pointerEvents: "auto",
-    zIndex: 5,
+    touchAction: "none",
+    zIndex: 10001,
   };
 }
 
@@ -235,7 +267,17 @@ function cornerHandleStyle(corner: Corner): React.CSSProperties {
 // Inline title editor
 // ---------------------------------------------------------------------------
 
-function TitleEditor({ note, fontSize }: { note: Note; fontSize: number }) {
+function TitleEditor({
+  note,
+  fontSize,
+  fontFamily,
+  color,
+}: {
+  note: Note;
+  fontSize: number;
+  fontFamily: string;
+  color: string;
+}) {
   const [value, setValue] = useState(note.title);
   const updateNote = useNotesStore((s) => s.updateNote);
   const setEditingNote = useUiStore((s) => s.setEditingNote);
@@ -264,8 +306,9 @@ function TitleEditor({ note, fontSize }: { note: Note; fontSize: number }) {
         width: "100%",
         textAlign: "center",
         fontSize,
+        fontFamily,
         fontWeight: 600,
-        color: "rgba(0,0,0,0.85)",
+        color,
         background: "rgba(255,255,255,0.55)",
         border: "none",
         borderRadius: 4,

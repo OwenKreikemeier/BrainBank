@@ -31,6 +31,7 @@ import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { SettingsModal } from "./SettingsModal";
 import { SelectionFrame } from "./SelectionFrame";
 import { TextToolbar } from "./TextToolbar";
+import { ImageToolbar } from "./ImageToolbar";
 
 export function InfiniteCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -68,6 +69,7 @@ export function InfiniteCanvas() {
       <PlacementOverlay />
       <CanvasControls />
       <TextToolbar />
+      <ImageToolbar />
       <NoteContextMenu />
       <ConfirmDeleteModal />
       <SettingsModal />

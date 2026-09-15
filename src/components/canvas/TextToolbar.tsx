@@ -4,7 +4,10 @@
 
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { useUiStore } from "../../store/uiStore";
-import { TEXT_FONTS, type TextAlign } from "../../types";
+import { useSettingsStore } from "../../store/settingsStore";
+import { type TextAlign } from "../../types";
+import { LayerControls } from "./LayerControls";
+import { FontSelect, menuControlChrome } from "./FontSelect";
 
 export function TextToolbar() {
   const selectedWidgetId = useUiStore((s) => s.selectedWidgetId);
@@ -17,6 +20,7 @@ export function TextToolbar() {
   const widget = useWidgetsStore.getState().getWidget(selectedWidgetId);
   const updateWidget = useWidgetsStore((s) => s.updateWidget);
   const deleteWidget = useWidgetsStore((s) => s.deleteWidget);
+  const light = useSettingsStore((s) => s.theme) === "light";
 
   if (!widget || widget.type !== "text" || selectedCount !== 1) return null;
 
@@ -41,18 +45,12 @@ export function TextToolbar() {
         fontSize: 13,
       }}
     >
-      <select
+      <FontSelect
         aria-label="Font"
+        light={light}
         value={widget.fontFamily}
-        onChange={(e) => updateWidget(widget.id, { fontFamily: e.target.value })}
-        style={controlStyle}
-      >
-        {TEXT_FONTS.map((font) => (
-          <option key={font.label} value={font.value}>
-            {font.label}
-          </option>
-        ))}
-      </select>
+        onChange={(fontFamily) => updateWidget(widget.id, { fontFamily })}
+      />
 
       <input
         type="number"
@@ -65,7 +63,7 @@ export function TextToolbar() {
             fontSize: Math.min(96, Math.max(8, Number(e.target.value) || 8)),
           })
         }
-        style={{ ...controlStyle, width: 56 }}
+        style={{ ...controlStyle, ...menuControlChrome(light), width: 56 }}
       />
 
       <input
@@ -105,6 +103,8 @@ export function TextToolbar() {
           </button>
         ))}
       </div>
+
+      <LayerControls widgetId={widget.id} />
 
       <button
         onClick={() => {

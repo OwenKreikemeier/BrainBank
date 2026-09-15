@@ -96,7 +96,7 @@ export function isValidNoteRect(
 }
 
 /**
- * True if a text block can sit on `noteId` without leaving the interior or
+ * True if a widget can sit on `noteId` without leaving the interior or
  * covering a child note. Widgets may overlap each other.
  * `excludeNotes` are child notes that should not collide (co-selected).
  */

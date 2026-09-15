@@ -4,7 +4,7 @@
 // Attach to the viewport element ref. Two modes:
 //
 //   Normal mode    — drag pans, wheel zooms (zoom re-bases frames in the store)
-//   Placement mode — drag draws a preview; release creates a note or text block
+//   Placement mode — drag draws a preview; release creates a note, text, or image
 //
 // Native listeners read live state via getState() so the handlers stay stable
 // and never go stale. Pointer-downs that originate on the HUD or a widget are
@@ -16,9 +16,15 @@ import { useCanvasStore } from "../store/canvasStore";
 import { useNotesStore } from "../store/notesStore";
 import { useWidgetsStore } from "../store/widgetsStore";
 import { useUiStore } from "../store/uiStore";
-import { MIN_WIDGET_CELLS, ZOOM_SENSITIVITY } from "../types";
-import { screenToCell, snapSquare, liveSquare, liveRect } from "../lib/coordinates";
+import { MIN_WIDGET_CELLS, ZOOM_SENSITIVITY, isWidgetPlacement } from "../types";
+import { screenToCell, snapSquare, liveSquare, liveRect, noteScreenRect, pointInRect } from "../lib/coordinates";
 import { isValidNoteRect, isValidWidgetGeom } from "../lib/noteValidity";
+import {
+  beginPastePlacement,
+  copyNote,
+  noteIdForCopy,
+  pasteNoteClipboard,
+} from "../lib/noteClipboard";
 
 function isHudTarget(target: EventTarget | null): boolean {
   return (
@@ -27,6 +33,12 @@ function isHudTarget(target: EventTarget | null): boolean {
       "[data-hud], [data-note-interactive], [data-widget-interactive], [data-selection-interactive]"
     ) !== null
   );
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") return true;
+  return target.isContentEditable;
 }
 
 export function useCanvasNavigation(
@@ -51,7 +63,7 @@ export function useCanvasNavigation(
       const { pan, zoom, frameId, placementKind } = canvas();
       const current = screenToCell(clientX, clientY, pan, zoom);
 
-      if (placementKind === "text") {
+      if (isWidgetPlacement(placementKind)) {
         const live = liveRect(anchorCell.current, current);
         const valid =
           frameId !== null &&
@@ -104,7 +116,12 @@ export function useCanvasNavigation(
         lastPointer.current = { x: e.clientX, y: e.clientY };
         canvas().movePan(dx, dy);
       }
-      if (!canvas().placementActive) {
+      // Rebase only when nothing is being dragged/resized. Otherwise the
+      // cursor leaving a shrinking note can switch frames and unmount it.
+      if (
+        !canvas().placementActive &&
+        ui().liftedNoteIds.length === 0
+      ) {
         canvas().settleAt(e.clientX, e.clientY);
         ui().pruneSelection(canvas().frameId);
       }
@@ -118,11 +135,12 @@ export function useCanvasNavigation(
         const { pan, zoom, frameId, placementKind, placementValid } = canvas();
         const current = screenToCell(e.clientX, e.clientY, pan, zoom);
 
-        if (placementKind === "text") {
+        if (isWidgetPlacement(placementKind)) {
           const live = liveRect(anchorCell.current, current);
           if (placementValid && frameId) {
             const created = widgets().addWidget({
               noteId: frameId,
+              type: placementKind === "image" ? "image" : "text",
               x: live.x,
               y: live.y,
               width: live.width,
@@ -133,12 +151,26 @@ export function useCanvasNavigation(
         } else {
           const snapped = snapSquare(anchorCell.current, current);
           if (placementValid) {
-            notes().addNote({
-              parentId: frameId,
-              x: snapped.x,
-              y: snapped.y,
-              size: snapped.size,
-            });
+            if (placementKind === "paste") {
+              const clip = ui().noteClipboard;
+              if (clip) {
+                const created = pasteNoteClipboard(
+                  clip,
+                  frameId,
+                  snapped.x,
+                  snapped.y,
+                  snapped.size
+                );
+                if (created) ui().selectNote(created.id, false);
+              }
+            } else {
+              notes().addNote({
+                parentId: frameId,
+                x: snapped.x,
+                y: snapped.y,
+                size: snapped.size,
+              });
+            }
           }
         }
 
@@ -158,8 +190,29 @@ export function useCanvasNavigation(
       canvas().zoomAtPoint(zoom * factor, e.clientX, e.clientY);
     }
 
+    function onDoubleClick(e: MouseEvent) {
+      if (e.button !== 0) return;
+      if (isHudTarget(e.target)) return;
+      if (canvas().placementActive) return;
+      if (ui().editingNoteId || ui().settingsOpen || ui().confirmDelete) return;
+
+      const { pan, zoom, frameId } = canvas();
+      for (const child of notes().getChildren(frameId)) {
+        const rect = noteScreenRect(child, pan, zoom);
+        if (pointInRect(e.clientX, e.clientY, rect)) {
+          e.preventDefault();
+          canvas().enterNote(child.id);
+          return;
+        }
+      }
+    }
+
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        if (ui().searchOpen) {
+          ui().setSearchOpen(false);
+          return;
+        }
         if (canvas().placementActive) {
           canvas().setPlacementActive(false);
           return;
@@ -180,16 +233,50 @@ export function useCanvasNavigation(
 
       if (e.key === "Delete") {
         const target = e.target;
-        if (
-          target instanceof HTMLElement &&
-          (target.tagName === "TEXTAREA" || target.tagName === "INPUT")
-        ) {
+        if (isEditableTarget(target)) {
           return;
         }
         const ids = ui().selectedWidgetIds;
         if (ids.length > 0) {
           for (const id of ids) widgets().deleteWidget(id);
           ui().clearSelection();
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+        if (isEditableTarget(e.target)) return;
+        if (ui().settingsOpen || ui().confirmDelete) return;
+        const key = e.key.toLowerCase();
+        if (key === "c") {
+          const noteId = noteIdForCopy();
+          if (!noteId) return;
+          e.preventDefault();
+          copyNote(noteId);
+          return;
+        }
+        if (key === "v") {
+          if (!ui().noteClipboard) return;
+          e.preventDefault();
+          beginPastePlacement();
+          return;
+        }
+      }
+
+      if (e.key === "[" || e.key === "]") {
+        if (isEditableTarget(e.target)) {
+          return;
+        }
+        if (ui().selectedNoteIds.length + ui().selectedWidgetIds.length !== 1) {
+          return;
+        }
+        const id = ui().selectedWidgetIds[0];
+        if (!id) return;
+        e.preventDefault();
+        if (e.key === "[") {
+          widgets().moveWidgetLayer(id, e.shiftKey ? "back" : "backward");
+        } else {
+          widgets().moveWidgetLayer(id, e.shiftKey ? "front" : "forward");
         }
       }
     }
@@ -199,6 +286,7 @@ export function useCanvasNavigation(
     viewport.addEventListener("pointerup", onPointerUp);
     viewport.addEventListener("pointercancel", onPointerUp);
     viewport.addEventListener("wheel", onWheel, { passive: false });
+    viewport.addEventListener("dblclick", onDoubleClick);
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
@@ -207,6 +295,7 @@ export function useCanvasNavigation(
       viewport.removeEventListener("pointerup", onPointerUp);
       viewport.removeEventListener("pointercancel", onPointerUp);
       viewport.removeEventListener("wheel", onWheel);
+      viewport.removeEventListener("dblclick", onDoubleClick);
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [viewportRef]);

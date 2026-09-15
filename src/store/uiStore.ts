@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { create } from "zustand";
+import type { NoteClipboard } from "../lib/noteClipboard";
 import { useNotesStore } from "./notesStore";
 import { useWidgetsStore } from "./widgetsStore";
 
@@ -42,6 +43,10 @@ interface UiStore {
   selectionInvalid: boolean;
   /** Whether the + tool tray is expanded */
   toolMenuOpen: boolean;
+  /** Copied note tree (nested notes + widgets), or null */
+  noteClipboard: NoteClipboard | null;
+  /** Whether the note search bar is expanded */
+  searchOpen: boolean;
 
   setEditingNote: (id: string | null) => void;
   openContextMenu: (menu: ContextMenuState) => void;
@@ -57,6 +62,8 @@ interface UiStore {
   pruneSelection: (frameId: string | null) => void;
   setSelectionInvalid: (invalid: boolean) => void;
   setToolMenuOpen: (open: boolean) => void;
+  setNoteClipboard: (clip: NoteClipboard | null) => void;
+  setSearchOpen: (open: boolean) => void;
 }
 
 function toggleId(list: string[], id: string): string[] {
@@ -74,6 +81,8 @@ export const useUiStore = create<UiStore>((set, get) => ({
   selectedWidgetId: null,
   selectionInvalid: false,
   toolMenuOpen: false,
+  noteClipboard: null,
+  searchOpen: false,
 
   setEditingNote(id) {
     set({ editingNoteId: id });
@@ -177,5 +186,11 @@ export const useUiStore = create<UiStore>((set, get) => ({
   },
   setToolMenuOpen(open) {
     set({ toolMenuOpen: open });
+  },
+  setNoteClipboard(clip) {
+    set({ noteClipboard: clip });
+  },
+  setSearchOpen(open) {
+    set({ searchOpen: open });
   },
 }));

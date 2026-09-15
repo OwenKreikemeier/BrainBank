@@ -13,6 +13,7 @@
 
 import { create } from "zustand";
 import {
+  BASE_CELL_PX,
   INTERIOR_SPAN,
   REBASE_IN_FACTOR,
   REBASE_OUT_FACTOR,
@@ -28,6 +29,7 @@ import {
   rebaseOut,
 } from "../lib/coordinates";
 import { useNotesStore } from "./notesStore";
+import { useUiStore } from "./uiStore";
 
 /** Placement preview, expressed in current-frame cell units. */
 export interface PlacementRect {
@@ -43,7 +45,7 @@ interface CanvasStore {
   pan: Pan;
   zoom: number;
 
-  /** Placement mode (drawing a new note or text block) */
+  /** Placement mode (drawing a new note, text block, or image) */
   placementActive: boolean;
   placementKind: PlacementKind;
   placementRect: PlacementRect | null;
@@ -53,6 +55,13 @@ interface CanvasStore {
   zoomAtPoint: (newZoom: number, focalX: number, focalY: number) => void;
   /** Re-evaluate which note the viewport is inside, using the cursor as focus. */
   settleAt: (focalX: number, focalY: number) => void;
+  /**
+   * Zoom into a direct child of the current frame and make it the new frame.
+   * Nested grandchildren are ignored — only one layer at a time.
+   */
+  enterNote: (noteId: string) => void;
+  /** Jump into any note (including nested) and make it the current frame. */
+  jumpToNote: (noteId: string) => void;
   resetViewport: () => void;
 
   setPlacementActive: (active: boolean, kind?: PlacementKind) => void;
@@ -140,6 +149,29 @@ function settleFrame(
   return { frameId, pan, zoom };
 }
 
+function clearUiForFrameChange() {
+  const ui = useUiStore.getState();
+  ui.clearSelection();
+  ui.setLiftedNotes([]);
+  ui.closeContextMenu();
+  ui.setEditingNote(null);
+  ui.setToolMenuOpen(false);
+  ui.setSearchOpen(false);
+}
+
+/** Fit a note's interior to the screen the same way a zoom-in enter does. */
+function interiorViewport(): { pan: Pan; zoom: number } {
+  const minScreen = Math.min(window.innerWidth, window.innerHeight);
+  const targetSize = REBASE_IN_FACTOR * minScreen;
+  return {
+    zoom: targetSize / INTERIOR_SPAN / BASE_CELL_PX,
+    pan: {
+      x: (window.innerWidth - targetSize) / 2,
+      y: (window.innerHeight - targetSize) / 2,
+    },
+  };
+}
+
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   frameId: null,
   pan: { x: 0, y: 0 },
@@ -174,6 +206,53 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   settleAt(focalX, focalY) {
     const { pan, zoom, frameId } = get();
     set(settleFrame(frameId, pan, zoom, focalX, focalY));
+  },
+
+  enterNote(noteId) {
+    const note = useNotesStore.getState().getNote(noteId);
+    const { frameId, pan, zoom } = get();
+    if (!note || note.parentId !== frameId) return;
+
+    const rect = noteScreenRect(note, pan, zoom);
+    if (rect.w < 1) return;
+
+    const minScreen = Math.min(window.innerWidth, window.innerHeight);
+    const targetSize = REBASE_IN_FACTOR * minScreen;
+    const scale = targetSize / rect.w;
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const nextPan: Pan = {
+      x: cx - scale * (cx - pan.x),
+      y: cy - scale * (cy - pan.y),
+    };
+    const entered = rebaseIn(nextPan, zoom * scale, note);
+
+    clearUiForFrameChange();
+
+    set({
+      frameId: note.id,
+      pan: entered.pan,
+      zoom: entered.zoom,
+      placementActive: false,
+      placementRect: null,
+      placementValid: true,
+    });
+  },
+
+  jumpToNote(noteId) {
+    const note = useNotesStore.getState().getNote(noteId);
+    if (!note) return;
+
+    clearUiForFrameChange();
+    const view = interiorViewport();
+    set({
+      frameId: note.id,
+      pan: view.pan,
+      zoom: view.zoom,
+      placementActive: false,
+      placementRect: null,
+      placementValid: true,
+    });
   },
 
   resetViewport() {
