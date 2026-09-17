@@ -3,8 +3,7 @@
 // ---------------------------------------------------------------------------
 // Options so far:
 //   • Theme       — dark (black grid, light lines) or light (white grid, dark lines)
-//   • Note IDs    — show/hide the small id label in each note's corner
-//   • Grid lines  — show/hide the grid lines entirely
+//   • Note depth  — show/hide the small depth label in each note's corner
 // Settings persist to localStorage via settingsStore.
 // ---------------------------------------------------------------------------
 
@@ -18,8 +17,6 @@ export function SettingsModal() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const showNoteIds = useSettingsStore((s) => s.showNoteIds);
   const setShowNoteIds = useSettingsStore((s) => s.setShowNoteIds);
-  const showGridLines = useSettingsStore((s) => s.showGridLines);
-  const setShowGridLines = useSettingsStore((s) => s.setShowGridLines);
 
   if (!open) return null;
 
@@ -108,27 +105,15 @@ export function SettingsModal() {
           </div>
         </SettingRow>
 
-        {/* Note ids */}
+        {/* Note depth */}
         <SettingRow
-          label="Show note IDs"
-          description="Display each note's id label in its corner"
+          label="Show note depth"
+          description="Display each note's depth in its corner"
         >
           <ToggleSwitch
             checked={showNoteIds}
             onChange={setShowNoteIds}
-            title="Toggle note IDs"
-          />
-        </SettingRow>
-
-        {/* Grid lines */}
-        <SettingRow
-          label="Show grid lines"
-          description="Draw the grid lines over the canvas"
-        >
-          <ToggleSwitch
-            checked={showGridLines}
-            onChange={setShowGridLines}
-            title="Toggle grid lines"
+            title="Toggle note depth"
           />
         </SettingRow>
       </div>

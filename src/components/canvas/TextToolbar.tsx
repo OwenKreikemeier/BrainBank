@@ -29,7 +29,7 @@ export function TextToolbar() {
       data-hud
       style={{
         position: "absolute",
-        top: 64,
+        top: 78,
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 12,

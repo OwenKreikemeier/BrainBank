@@ -202,6 +202,18 @@ export function pointInRect(px: number, py: number, r: ScreenRect): boolean {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
+/** How much of the viewport a screen rect covers (0–1 by area). */
+export function viewportCoverage(
+  rect: ScreenRect,
+  vw: number,
+  vh: number
+): number {
+  if (vw <= 0 || vh <= 0) return 0;
+  const visW = Math.max(0, Math.min(rect.x + rect.w, vw) - Math.max(rect.x, 0));
+  const visH = Math.max(0, Math.min(rect.y + rect.h, vh) - Math.max(rect.y, 0));
+  return (visW * visH) / (vw * vh);
+}
+
 // ---------------------------------------------------------------------------
 // Rebasing — change of reference frame
 // ---------------------------------------------------------------------------

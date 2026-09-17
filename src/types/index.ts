@@ -144,12 +144,13 @@ export const ROOT_MIN_ZOOM = 0.2;
 export const ZOOM_SENSITIVITY = 0.001;
 
 /**
- * Rebase thresholds (multiples of the smaller screen dimension). Hysteresis:
- * we only enter a child once it is clearly bigger than the screen, and only
- * pop back out once the current frame no longer fills the screen.
+ * Rebase thresholds. Enter a child only when it is clearly larger than the
+ * screen and covers at least half the viewport. Pop back out once it covers
+ * less than half, so a huge neighbor that is mostly off-screen cannot trap you.
  */
 export const REBASE_IN_FACTOR = 1.3;
-export const REBASE_OUT_FACTOR = 1.0;
+/** Fraction of the viewport a note must cover to enter, and drop below to exit. */
+export const REBASE_IN_COVERAGE = 0.5;
 
 /** Smallest note you can draw, in cells */
 export const MIN_NOTE_CELLS = 1;

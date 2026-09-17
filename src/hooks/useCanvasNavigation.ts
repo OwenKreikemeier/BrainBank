@@ -164,11 +164,18 @@ export function useCanvasNavigation(
                 if (created) ui().selectNote(created.id, false);
               }
             } else {
-              notes().addNote({
+              const created = notes().addNote({
                 parentId: frameId,
                 x: snapped.x,
                 y: snapped.y,
                 size: snapped.size,
+              });
+              const id = created.id;
+              ui().selectNote(id, false);
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  ui().setEditingNote(id);
+                });
               });
             }
           }
@@ -201,13 +208,14 @@ export function useCanvasNavigation(
         const rect = noteScreenRect(child, pan, zoom);
         if (pointInRect(e.clientX, e.clientY, rect)) {
           e.preventDefault();
-          canvas().enterNote(child.id);
+          canvas().enterNote(child.id, e.clientX, e.clientY);
           return;
         }
       }
     }
 
     function onKeyDown(e: KeyboardEvent) {
+      if (ui().editingNoteId) return;
       if (e.key === "Escape") {
         if (ui().searchOpen) {
           ui().setSearchOpen(false);

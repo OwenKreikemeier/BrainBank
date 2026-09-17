@@ -4,7 +4,7 @@
 // Chrome:
 //   • top-left      search (slides to top-center when open)
 //   • top-center    current-note title (only when inside a note)
-//   • bottom-right  reset + settings
+//   • bottom-right  home, grid toggle, settings
 //   • bottom-middle + button that expands a tool tray (note / text / image)
 // ---------------------------------------------------------------------------
 
@@ -14,7 +14,11 @@ import { useNotesStore } from "../../store/notesStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useUiStore } from "../../store/uiStore";
 import { beginPastePlacement } from "../../lib/noteClipboard";
-import type { PlacementKind } from "../../types";
+import {
+  DEFAULT_TITLE_COLOR,
+  DEFAULT_TITLE_FONT,
+  type PlacementKind,
+} from "../../types";
 import { NoteSearch } from "./NoteSearch";
 
 export function CanvasControls() {
@@ -30,6 +34,8 @@ export function CanvasControls() {
   const searchOpen = useUiStore((s) => s.searchOpen);
   const notesVersion = useNotesStore((s) => s.version);
   const theme = useSettingsStore((s) => s.theme);
+  const showGridLines = useSettingsStore((s) => s.showGridLines);
+  const setShowGridLines = useSettingsStore((s) => s.setShowGridLines);
   void notesVersion;
   const frameNote = useNotesStore.getState().getNote(frameId);
   const light = theme === "light";
@@ -71,17 +77,16 @@ export function CanvasControls() {
             top: searchOpen ? 76 : 20,
             left: "50%",
             transform: "translateX(-50%)",
+            transition: "top 0.22s ease",
             zIndex: 10,
             maxWidth: "min(720px, calc(100% - 48px))",
-            padding: "8px 20px",
-            borderRadius: 10,
-            background: light ? "rgba(255,255,255,0.78)" : "rgba(0,0,0,0.5)",
-            border: light
-              ? "1px solid rgba(0,0,0,0.12)"
-              : "1px solid rgba(255,255,255,0.12)",
-            color: light ? "rgba(0,0,0,0.82)" : "rgba(255,255,255,0.92)",
-            backdropFilter: "blur(10px)",
-            fontSize: 15,
+            padding: "11px 26px",
+            borderRadius: 12,
+            background: frameNote.color,
+            border: "1px solid rgba(0,0,0,0.12)",
+            color: frameNote.titleColor ?? DEFAULT_TITLE_COLOR,
+            fontFamily: frameNote.titleFontFamily ?? DEFAULT_TITLE_FONT,
+            fontSize: 18,
             fontWeight: 600,
             letterSpacing: "0.01em",
             textAlign: "center",
@@ -89,6 +94,7 @@ export function CanvasControls() {
             overflow: "hidden",
             textOverflow: "ellipsis",
             pointerEvents: "none",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.16)",
           }}
         >
           {frameNote.title.trim() || "Untitled"}
@@ -111,7 +117,16 @@ export function CanvasControls() {
           aria-label="Reset view"
           style={hudButtonStyle(light, false)}
         >
-          ⌂
+          <HomeGlyph />
+        </button>
+        <button
+          onClick={() => setShowGridLines(!showGridLines)}
+          title={showGridLines ? "Hide grid" : "Show grid"}
+          aria-label={showGridLines ? "Hide grid" : "Show grid"}
+          aria-pressed={showGridLines}
+          style={hudButtonStyle(light, showGridLines)}
+        >
+          <GridGlyph />
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
@@ -276,9 +291,73 @@ function ToolTray({
           zIndex: 2,
         }}
       >
-        {placementActive || open ? "×" : "+"}
+        <span
+          style={{
+            display: "flex",
+            transform: placementActive || open ? "rotate(-45deg)" : "rotate(0deg)",
+            transition: `transform ${TOOL_EASE}`,
+          }}
+        >
+          <PlusGlyph />
+        </span>
       </button>
     </div>
+  );
+}
+
+function HomeGlyph() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 11.2 12 4l8 7.2" />
+      <path d="M6.5 10.4V20h11V10.4" />
+      <path d="M10 20v-5.5h4V20" />
+    </svg>
+  );
+}
+
+function GridGlyph() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M4 10h16M4 16h16M10 4v16M16 4v16" />
+    </svg>
+  );
+}
+
+function PlusGlyph() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
   );
 }
 
@@ -431,9 +510,10 @@ function hudButtonStyle(light: boolean, active: boolean): React.CSSProperties {
   return {
     width: 40,
     height: 40,
+    padding: 0,
     borderRadius: 8,
-    fontSize: 18,
-    lineHeight: 1,
+    fontSize: 0,
+    lineHeight: 0,
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
@@ -460,9 +540,10 @@ function placeButtonStyle(light: boolean, active: boolean): React.CSSProperties 
   return {
     width: 52,
     height: 52,
+    padding: 0,
     borderRadius: "50%",
-    fontSize: 28,
-    lineHeight: 1,
+    fontSize: 0,
+    lineHeight: 0,
     cursor: "pointer",
     display: "flex",
     alignItems: "center",

@@ -15,11 +15,12 @@ import { create } from "zustand";
 import {
   BASE_CELL_PX,
   INTERIOR_SPAN,
+  REBASE_IN_COVERAGE,
   REBASE_IN_FACTOR,
-  REBASE_OUT_FACTOR,
   ROOT_MIN_ZOOM,
   type Pan,
   type PlacementKind,
+  type ScreenRect,
 } from "../types";
 import {
   cellPxFor,
@@ -27,6 +28,7 @@ import {
   pointInRect,
   rebaseIn,
   rebaseOut,
+  viewportCoverage,
 } from "../lib/coordinates";
 import { useNotesStore } from "./notesStore";
 import { useUiStore } from "./uiStore";
@@ -58,8 +60,9 @@ interface CanvasStore {
   /**
    * Zoom into a direct child of the current frame and make it the new frame.
    * Nested grandchildren are ignored — only one layer at a time.
+   * `focalX`/`focalY` keep the double-click point fixed on screen.
    */
-  enterNote: (noteId: string) => void;
+  enterNote: (noteId: string, focalX?: number, focalY?: number) => void;
   /** Jump into any note (including nested) and make it the current frame. */
   jumpToNote: (noteId: string) => void;
   resetViewport: () => void;
@@ -80,15 +83,31 @@ function settleFrame(
   focalX: number,
   focalY: number
 ): { frameId: string | null; pan: Pan; zoom: number } {
-  const minScreen = Math.min(window.innerWidth, window.innerHeight);
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const minScreen = Math.min(vw, vh);
   const notes = useNotesStore.getState();
+
+  function canEnter(rect: ScreenRect): boolean {
+    return (
+      rect.w >= REBASE_IN_FACTOR * minScreen &&
+      viewportCoverage(rect, vw, vh) >= REBASE_IN_COVERAGE &&
+      pointInRect(focalX, focalY, rect)
+    );
+  }
 
   let guard = 0;
   while (guard++ < 64) {
-    // --- Zoom OUT: current frame no longer fills the screen -> pop to parent
+    // --- Zoom OUT: current frame covers less than half the screen -> pop out
     if (frameId !== null) {
       const interiorEdge = INTERIOR_SPAN * cellPxFor(zoom);
-      if (interiorEdge <= REBASE_OUT_FACTOR * minScreen) {
+      const frameRect = {
+        x: pan.x,
+        y: pan.y,
+        w: interiorEdge,
+        h: interiorEdge,
+      };
+      if (viewportCoverage(frameRect, vw, vh) < REBASE_IN_COVERAGE) {
         const frameNote = notes.getNote(frameId);
         if (frameNote) {
           const r = rebaseOut(pan, zoom, frameNote);
@@ -104,10 +123,7 @@ function settleFrame(
     let entered = false;
     for (const child of notes.getChildren(frameId)) {
       const rect = noteScreenRect(child, pan, zoom);
-      if (
-        rect.w >= REBASE_IN_FACTOR * minScreen &&
-        pointInRect(focalX, focalY, rect)
-      ) {
+      if (canEnter(rect)) {
         const r = rebaseIn(pan, zoom, child);
         pan = r.pan;
         zoom = r.zoom;
@@ -127,10 +143,7 @@ function settleFrame(
         for (const sib of notes.getChildren(frameNote.parentId)) {
           if (sib.id === frameId) continue;
           const rect = noteScreenRect(sib, parentView.pan, parentView.zoom);
-          if (
-            rect.w >= REBASE_IN_FACTOR * minScreen &&
-            pointInRect(focalX, focalY, rect)
-          ) {
+          if (canEnter(rect)) {
             const r = rebaseIn(parentView.pan, parentView.zoom, sib);
             pan = r.pan;
             zoom = r.zoom;
@@ -159,6 +172,23 @@ function clearUiForFrameChange() {
   ui.setSearchOpen(false);
 }
 
+const ENTER_ZOOM_MS = 260;
+
+function easeOutCubic(t: number) {
+  return 1 - (1 - t) ** 3;
+}
+
+let enterRaf = 0;
+let enterEnd: { frameId: string; pan: Pan; zoom: number } | null = null;
+
+function cancelEnterZoom() {
+  if (enterRaf) {
+    cancelAnimationFrame(enterRaf);
+    enterRaf = 0;
+  }
+  enterEnd = null;
+}
+
 /** Fit a note's interior to the screen the same way a zoom-in enter does. */
 function interiorViewport(): { pan: Pan; zoom: number } {
   const minScreen = Math.min(window.innerWidth, window.innerHeight);
@@ -172,7 +202,27 @@ function interiorViewport(): { pan: Pan; zoom: number } {
   };
 }
 
-export const useCanvasStore = create<CanvasStore>((set, get) => ({
+export const useCanvasStore = create<CanvasStore>((set, get) => {
+  function commitEnterZoom() {
+    if (!enterRaf && !enterEnd) return;
+    if (enterRaf) {
+      cancelAnimationFrame(enterRaf);
+      enterRaf = 0;
+    }
+    const end = enterEnd;
+    enterEnd = null;
+    if (!end) return;
+    set({
+      frameId: end.frameId,
+      pan: end.pan,
+      zoom: end.zoom,
+      placementActive: false,
+      placementRect: null,
+      placementValid: true,
+    });
+  }
+
+  return {
   frameId: null,
   pan: { x: 0, y: 0 },
   zoom: 1,
@@ -183,10 +233,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   placementValid: true,
 
   movePan(dx, dy) {
+    commitEnterZoom();
     set((s) => ({ pan: { x: s.pan.x + dx, y: s.pan.y + dy } }));
   },
 
   zoomAtPoint(newZoom, focalX, focalY) {
+    commitEnterZoom();
     const { pan, zoom, frameId } = get();
 
     // Only the root frame has a hard zoom-out floor.
@@ -204,11 +256,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   settleAt(focalX, focalY) {
+    if (enterRaf) return;
     const { pan, zoom, frameId } = get();
     set(settleFrame(frameId, pan, zoom, focalX, focalY));
   },
 
-  enterNote(noteId) {
+  enterNote(noteId, focalX, focalY) {
     const note = useNotesStore.getState().getNote(noteId);
     const { frameId, pan, zoom } = get();
     if (!note || note.parentId !== frameId) return;
@@ -216,33 +269,76 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const rect = noteScreenRect(note, pan, zoom);
     if (rect.w < 1) return;
 
-    const minScreen = Math.min(window.innerWidth, window.innerHeight);
-    const targetSize = REBASE_IN_FACTOR * minScreen;
+    const fx = focalX ?? rect.x + rect.w / 2;
+    const fy = focalY ?? rect.y + rect.h / 2;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const targetSize = Math.max(vw, vh);
     const scale = targetSize / rect.w;
-    const cx = rect.x + rect.w / 2;
-    const cy = rect.y + rect.h / 2;
     const nextPan: Pan = {
-      x: cx - scale * (cx - pan.x),
-      y: cy - scale * (cy - pan.y),
+      x: fx - scale * (fx - pan.x),
+      y: fy - scale * (fy - pan.y),
     };
-    const entered = rebaseIn(nextPan, zoom * scale, note);
+    const newX = fx - (fx - rect.x) * scale;
+    const newY = fy - (fy - rect.y) * scale;
+    const newW = rect.w * scale;
+    let dx = 0;
+    let dy = 0;
+    if (newX > 0) dx = -newX;
+    if (newY > 0) dy = -newY;
+    if (newX + dx + newW < vw) dx = vw - newW - newX;
+    if (newY + dy + newW < vh) dy = vh - newW - newY;
+    nextPan.x += dx;
+    nextPan.y += dy;
+    const endZoom = zoom * scale;
+    const entered = rebaseIn(nextPan, endZoom, note);
 
+    cancelEnterZoom();
     clearUiForFrameChange();
-
     set({
-      frameId: note.id,
-      pan: entered.pan,
-      zoom: entered.zoom,
       placementActive: false,
       placementRect: null,
       placementValid: true,
     });
+
+    const startPan = pan;
+    const startZoom = zoom;
+    enterEnd = { frameId: note.id, pan: entered.pan, zoom: entered.zoom };
+    const t0 = performance.now();
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / ENTER_ZOOM_MS);
+      const k = easeOutCubic(t);
+      if (t < 1) {
+        set({
+          pan: {
+            x: startPan.x + (nextPan.x - startPan.x) * k,
+            y: startPan.y + (nextPan.y - startPan.y) * k,
+          },
+          zoom: startZoom + (endZoom - startZoom) * k,
+        });
+        enterRaf = requestAnimationFrame(step);
+        return;
+      }
+      enterRaf = 0;
+      const end = enterEnd;
+      enterEnd = null;
+      if (end) {
+        set({
+          frameId: end.frameId,
+          pan: end.pan,
+          zoom: end.zoom,
+        });
+      }
+    };
+    enterRaf = requestAnimationFrame(step);
   },
 
   jumpToNote(noteId) {
     const note = useNotesStore.getState().getNote(noteId);
     if (!note) return;
 
+    cancelEnterZoom();
     clearUiForFrameChange();
     const view = interiorViewport();
     set({
@@ -256,6 +352,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   resetViewport() {
+    cancelEnterZoom();
     set({ frameId: null, pan: { x: 0, y: 0 }, zoom: 1 });
   },
 
@@ -271,4 +368,5 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setPlacementPreview(rect, valid) {
     set({ placementRect: rect, placementValid: valid });
   },
-}));
+  };
+});

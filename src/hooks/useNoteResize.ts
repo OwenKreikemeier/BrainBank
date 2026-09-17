@@ -134,6 +134,7 @@ export function useNoteResize(note: Note) {
     const liveNote = noteRef.current;
     if (!ui.selectedNoteIds.includes(liveNote.id)) {
       ui.selectNote(liveNote.id, false);
+      return;
     }
     ui.setLiftedNotes([liveNote.id]);
     setInvalid(false);

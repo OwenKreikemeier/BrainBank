@@ -10,7 +10,7 @@
 // Corner handles allow resizing (opposite corner stays fixed, always square).
 // ---------------------------------------------------------------------------
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BASE_CELL_PX,
   DEFAULT_TITLE_COLOR,
@@ -55,6 +55,10 @@ function isInLiftedSubtree(note: Note, liftedId: string | null): boolean {
   return false;
 }
 
+/** Corner depth label as a fraction of the note's on-screen width. */
+const DEPTH_SIZE_RATIO = 0.035;
+const DEPTH_PAD_RATIO = 0.016;
+
 export function NoteView({ note, rect, interactive }: NoteViewProps) {
   const [hovered, setHovered] = useState(false);
   const editingNoteId = useUiStore((s) => s.editingNoteId);
@@ -91,6 +95,18 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
         fontFamily: titleFontFamily,
       })
     : { px: titleTargetPx, visible: false };
+  const depthLabel = `Depth ${note.depth}`;
+  const depthTargetPx = Math.min(
+    Math.max(1, rect.w * DEPTH_SIZE_RATIO),
+    titleBarHeight * 0.55
+  );
+  const depthPad = Math.max(0.5, rect.w * DEPTH_PAD_RATIO);
+  const depthFit = fitSingleLineFont({
+    content: depthLabel,
+    targetPx: depthTargetPx,
+    widthPx: Math.max(0, rect.w - depthPad * 2),
+    fontFamily: "monospace",
+  });
   const editorFontSize = Math.max(9, titleTargetPx);
   const widgetsVersion = useWidgetsStore((s) => s.version);
   void widgetsVersion;
@@ -122,22 +138,23 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
         zIndex: lifted ? 3 : 0,
       }}
     >
-      {/* id label — toggleable in settings */}
-      {showNoteIds && rect.w >= 40 && (
+      {/* depth label — toggleable in settings; size follows the note's screen size */}
+      {showNoteIds && (
         <div
           style={{
             position: "absolute",
-            top: 3,
-            left: 5,
+            top: depthPad * 0.6,
+            left: depthPad,
             fontFamily: "monospace",
-            fontSize: Math.max(7, Math.min(11, rect.w * 0.03)),
-            lineHeight: 1.2,
+            fontSize: depthFit.px,
+            lineHeight: 1,
             color: "rgba(0,0,0,0.55)",
             whiteSpace: "nowrap",
             pointerEvents: "none",
+            visibility: depthFit.visible ? "visible" : "hidden",
           }}
         >
-          #{note.id.slice(0, 8)}
+          {depthLabel}
         </div>
       )}
 
@@ -150,7 +167,7 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
           if (!isInteractive || isEditing) return;
           e.stopPropagation();
           e.preventDefault();
-          enterNote(note.id);
+          enterNote(note.id, e.clientX, e.clientY);
         }}
         onContextMenu={(e) => {
           if (!isInteractive) return;
@@ -170,7 +187,13 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
           justifyContent: "center",
           background:
             isInteractive && hovered ? TITLE_HOVER_OVERLAY : "transparent",
-          cursor: isInteractive ? (isEditing ? "text" : "grab") : "default",
+          cursor: isInteractive
+            ? isEditing
+              ? "text"
+              : selected
+                ? "grab"
+                : "pointer"
+            : "default",
           pointerEvents: isInteractive ? "auto" : "none",
           padding: `0 ${titlePadX}px`,
           boxSizing: "border-box",
@@ -224,6 +247,7 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
       {/* Corner resize handles — stay mounted while this note is being
           resized so shrinking below MIN_INTERACT_PX cannot drop capture. */}
       {(isInteractive || moving) &&
+        selected &&
         !isEditing &&
         !multi &&
         CORNERS.map((corner) => (
@@ -279,8 +303,18 @@ function TitleEditor({
   color: string;
 }) {
   const [value, setValue] = useState(note.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const readyRef = useRef(false);
   const updateNote = useNotesStore((s) => s.updateNote);
   const setEditingNote = useUiStore((s) => s.setEditingNote);
+
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      readyRef.current = true;
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, []);
 
   function commit() {
     updateNote(note.id, { title: value.trim() });
@@ -289,14 +323,20 @@ function TitleEditor({
 
   return (
     <input
+      ref={inputRef}
       data-note-interactive=""
       autoFocus
       aria-label="Note title"
-      placeholder="Title"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onPointerDown={(e) => e.stopPropagation()}
-      onBlur={commit}
+      onBlur={() => {
+        if (!readyRef.current) {
+          inputRef.current?.focus();
+          return;
+        }
+        commit();
+      }}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === "Enter") commit();
@@ -309,11 +349,16 @@ function TitleEditor({
         fontFamily,
         fontWeight: 600,
         color,
-        background: "rgba(255,255,255,0.55)",
+        caretColor: color,
+        background: "transparent",
         border: "none",
-        borderRadius: 4,
-        outline: "1px solid rgba(0,0,0,0.25)",
-        padding: "2px 4px",
+        outline: "none",
+        boxShadow: "none",
+        padding: 0,
+        margin: 0,
+        lineHeight: 1,
+        appearance: "none",
+        WebkitAppearance: "none",
         boxSizing: "border-box",
       }}
     />
