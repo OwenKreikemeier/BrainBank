@@ -8,9 +8,9 @@
 # The release includes latest.json + a signed installer, which installed
 # copies of BrainBank check on launch via the Tauri updater plugin.
 #
-# Required repo secrets (Settings → Secrets and variables → Actions):
-#   TAURI_SIGNING_PRIVATE_KEY          — contents of ~/.tauri/brainbank.key
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty string (key has no password)
+# Required repo secret (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY — contents of ~/.tauri/brainbank.key
+# (The key has no password, so the password env var is hardcoded empty below.)
 # ---------------------------------------------------------------------------
 
 name: Release
@@ -66,7 +66,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: v__VERSION__
           releaseName: "BrainBank v__VERSION__"
