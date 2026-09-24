@@ -19,6 +19,7 @@ import { useCanvasStore } from "../../store/canvasStore";
 import { useNotesStore } from "../../store/notesStore";
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { useSettingsStore, THEME_COLORS } from "../../store/settingsStore";
+import { useUpdateStore } from "../../store/updateStore";
 import { useCanvasNavigation } from "../../hooks/useCanvasNavigation";
 import { GridOverlay } from "./GridOverlay";
 import { FrameBorder } from "./FrameBorder";
@@ -43,6 +44,7 @@ export function InfiniteCanvas() {
   useEffect(() => {
     void useNotesStore.getState().loadAll();
     void useWidgetsStore.getState().loadAll();
+    void useUpdateStore.getState().checkForUpdate();
   }, []);
 
   return (

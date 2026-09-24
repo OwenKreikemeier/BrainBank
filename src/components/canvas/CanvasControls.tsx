@@ -13,6 +13,7 @@ import { useCanvasStore } from "../../store/canvasStore";
 import { useNotesStore } from "../../store/notesStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useUiStore } from "../../store/uiStore";
+import { useUpdateStore } from "../../store/updateStore";
 import { beginPastePlacement } from "../../lib/noteClipboard";
 import {
   DEFAULT_TITLE_COLOR,
@@ -36,6 +37,7 @@ export function CanvasControls() {
   const theme = useSettingsStore((s) => s.theme);
   const showGridLines = useSettingsStore((s) => s.showGridLines);
   const setShowGridLines = useSettingsStore((s) => s.setShowGridLines);
+  const updateAvailable = useUpdateStore((s) => s.available !== null);
   void notesVersion;
   const frameNote = useNotesStore.getState().getNote(frameId);
   const light = theme === "light";
@@ -130,11 +132,29 @@ export function CanvasControls() {
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
-          title="Settings"
+          title={updateAvailable ? "Settings — update available" : "Settings"}
           aria-label="Settings"
-          style={hudButtonStyle(light, false)}
+          style={{ ...hudButtonStyle(light, false), position: "relative" }}
         >
           <SettingsGlyph />
+          {updateAvailable && (
+            <span
+              aria-hidden
+              style={{
+                position: "absolute",
+                top: -3,
+                right: -3,
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: "#ff5f57",
+                border: light
+                  ? "1.5px solid rgba(255,255,255,0.9)"
+                  : "1.5px solid rgba(20,22,28,0.9)",
+                pointerEvents: "none",
+              }}
+            />
+          )}
         </button>
       </div>
 

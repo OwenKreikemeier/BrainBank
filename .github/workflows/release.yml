@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------------------
+# Release — build the Windows installer and publish a GitHub release
+# ---------------------------------------------------------------------------
+# Runs on every push to main. If the version in src-tauri/tauri.conf.json
+# already has a release tag (v<version>), the build is skipped — so pushing
+# regular commits does nothing, and bumping the version publishes an update.
+#
+# The release includes latest.json + a signed installer, which installed
+# copies of BrainBank check on launch via the Tauri updater plugin.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY          — contents of ~/.tauri/brainbank.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty string (key has no password)
+# ---------------------------------------------------------------------------
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+            echo "Release v$VERSION already exists — skipping build."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release for v$VERSION yet — building."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-release:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "BrainBank v__VERSION__"
+          releaseBody: "Download BrainBank_${{ needs.check-version.outputs.version }}_x64-setup.exe to install. Installed apps update automatically."
+          releaseDraft: false
+          prerelease: false

@@ -9,6 +9,7 @@
 
 import { useUiStore } from "../../store/uiStore";
 import { useSettingsStore, type Theme } from "../../store/settingsStore";
+import { useUpdateStore } from "../../store/updateStore";
 
 export function SettingsModal() {
   const open = useUiStore((s) => s.settingsOpen);
@@ -17,6 +18,10 @@ export function SettingsModal() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const showNoteIds = useSettingsStore((s) => s.showNoteIds);
   const setShowNoteIds = useSettingsStore((s) => s.setShowNoteIds);
+  const update = useUpdateStore((s) => s.available);
+  const installing = useUpdateStore((s) => s.installing);
+  const updateError = useUpdateStore((s) => s.error);
+  const installUpdate = useUpdateStore((s) => s.installUpdate);
 
   if (!open) return null;
 
@@ -116,6 +121,44 @@ export function SettingsModal() {
             title="Toggle note depth"
           />
         </SettingRow>
+
+        {/* App update — only shown when a newer GitHub release exists */}
+        {update && (
+          <>
+            <SettingRow
+              label="Update available"
+              description={`Version ${update.version} is ready to install`}
+            >
+              <button
+                onClick={() => void installUpdate()}
+                disabled={installing}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  cursor: installing ? "wait" : "pointer",
+                  border: "1px solid rgba(120,185,255,0.9)",
+                  background: "rgba(80,160,255,0.3)",
+                  color: "rgba(255,255,255,0.9)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {installing ? "Installing…" : "Update now"}
+              </button>
+            </SettingRow>
+            {updateError && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,120,120,0.9)",
+                  paddingBottom: 8,
+                }}
+              >
+                Update failed: {updateError}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
