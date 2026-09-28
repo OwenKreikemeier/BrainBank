@@ -5,7 +5,7 @@
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { useUiStore } from "../../store/uiStore";
 import { useSettingsStore } from "../../store/settingsStore";
-import { type TextAlign } from "../../types";
+import { DEFAULT_SHAPE_STROKE, DEFAULT_TEXT_BG, type TextAlign } from "../../types";
 import { LayerControls } from "./LayerControls";
 import { FontSelect, menuControlChrome } from "./FontSelect";
 
@@ -23,6 +23,10 @@ export function TextToolbar() {
   const light = useSettingsStore((s) => s.theme) === "light";
 
   if (!widget || widget.type !== "text" || selectedCount !== 1) return null;
+
+  const bg = widget.fill ?? "";
+  const hasBg = bg !== "";
+  const strokeWidth = widget.strokeWidth ?? 0;
 
   return (
     <div
@@ -80,6 +84,57 @@ export function TextToolbar() {
           padding: 0,
         }}
       />
+
+      <label style={labelStyle} title="Background color">
+        Bg
+        <input
+          type="color"
+          aria-label="Background color"
+          value={hasBg ? bg : DEFAULT_TEXT_BG}
+          onChange={(e) => updateWidget(widget.id, { fill: e.target.value })}
+          style={colorInputStyle}
+        />
+        <button
+          onClick={() =>
+            updateWidget(widget.id, { fill: hasBg ? "" : DEFAULT_TEXT_BG })
+          }
+          title={hasBg ? "Remove background" : "Add background"}
+          aria-pressed={hasBg}
+          style={{
+            ...controlStyle,
+            cursor: "pointer",
+            padding: "4px 8px",
+            background: hasBg ? "rgba(80,160,255,0.4)" : controlStyle.background,
+          }}
+        >
+          {hasBg ? "On" : "Off"}
+        </button>
+      </label>
+
+      <label style={labelStyle} title="Border width (0 = none)">
+        Border
+        <input
+          type="number"
+          aria-label="Border width"
+          min={0}
+          max={20}
+          value={Math.round(strokeWidth)}
+          onChange={(e) =>
+            updateWidget(widget.id, {
+              strokeWidth: Math.min(20, Math.max(0, Number(e.target.value) || 0)),
+              stroke: widget.stroke ?? DEFAULT_SHAPE_STROKE,
+            })
+          }
+          style={{ ...controlStyle, ...menuControlChrome(light), width: 48 }}
+        />
+        <input
+          type="color"
+          aria-label="Border color"
+          value={widget.stroke ?? DEFAULT_SHAPE_STROKE}
+          onChange={(e) => updateWidget(widget.id, { stroke: e.target.value })}
+          style={colorInputStyle}
+        />
+      </label>
 
       <div style={{ display: "flex", gap: 2 }}>
         {ALIGN_OPTIONS.map((option) => (
@@ -171,4 +226,22 @@ const controlStyle: React.CSSProperties = {
   borderRadius: 6,
   padding: "4px 6px",
   fontSize: 13,
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
+  fontSize: 12,
+  color: "rgba(255,255,255,0.7)",
+  whiteSpace: "nowrap",
+};
+
+const colorInputStyle: React.CSSProperties = {
+  width: 30,
+  height: 26,
+  border: "none",
+  background: "none",
+  cursor: "pointer",
+  padding: 0,
 };

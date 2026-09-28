@@ -50,6 +50,7 @@ function fallbackSnap(note: Note): GroupSnap {
 export function useNoteDrag(note: Note) {
   const [invalid, setInvalid] = useState(false);
   const drag = useRef<DragState | null>(null);
+  const lastPointerDown = useRef(0);
 
   function markInvalid(bad: boolean) {
     setInvalid(bad);
@@ -61,14 +62,23 @@ export function useNoteDrag(note: Note) {
     e.stopPropagation();
 
     const ui = useUiStore.getState();
+    const now = performance.now();
+    // PointerEvent.detail is not a reliable click count, so a second press
+    // shortly after the first is treated as the rest of a double-click.
+    const secondPress = now - lastPointerDown.current < 500;
+    lastPointerDown.current = now;
+
     if (e.shiftKey) {
       ui.selectNote(note.id, true);
       return;
     }
-    if (!ui.selectedNoteIds.includes(note.id)) {
+    const wasSelected = ui.selectedNoteIds.includes(note.id);
+    if (!wasSelected) {
       ui.selectNote(note.id, false);
       return;
     }
+    // The second press of a double-click must not start a drag.
+    if (secondPress || e.detail >= 2) return;
 
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const captured = captureSelection();

@@ -26,6 +26,7 @@ import {
   type Note,
   type NoteType,
 } from "../types";
+import { useSettingsStore } from "./settingsStore";
 import { useWidgetsStore } from "./widgetsStore";
 
 const ROOT_KEY = "root";
@@ -176,7 +177,7 @@ export const useNotesStore = create<NotesStore>((set, get) => ({
       color: input.color ?? NOTE_COLOR,
       title: input.title ?? "",
       titleColor: DEFAULT_TITLE_COLOR,
-      titleFontFamily: DEFAULT_TITLE_FONT,
+      titleFontFamily: useSettingsStore.getState().defaultNoteFont,
       titleFontSize: DEFAULT_TITLE_FONT_SIZE,
       content: input.content ?? "",
       createdAt: now,

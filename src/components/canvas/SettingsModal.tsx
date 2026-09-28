@@ -4,12 +4,14 @@
 // Options so far:
 //   • Theme       — dark (black grid, light lines) or light (white grid, dark lines)
 //   • Note depth  — show/hide the small depth label in each note's corner
+//   • Note font   — title font used when a new note is created
 // Settings persist to localStorage via settingsStore.
 // ---------------------------------------------------------------------------
 
 import { useUiStore } from "../../store/uiStore";
 import { useSettingsStore, type Theme } from "../../store/settingsStore";
 import { useUpdateStore } from "../../store/updateStore";
+import { FontSelect } from "./FontSelect";
 
 export function SettingsModal() {
   const open = useUiStore((s) => s.settingsOpen);
@@ -18,6 +20,8 @@ export function SettingsModal() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const showNoteIds = useSettingsStore((s) => s.showNoteIds);
   const setShowNoteIds = useSettingsStore((s) => s.setShowNoteIds);
+  const defaultNoteFont = useSettingsStore((s) => s.defaultNoteFont);
+  const setDefaultNoteFont = useSettingsStore((s) => s.setDefaultNoteFont);
   const update = useUpdateStore((s) => s.available);
   const installing = useUpdateStore((s) => s.installing);
   const updateError = useUpdateStore((s) => s.error);
@@ -119,6 +123,19 @@ export function SettingsModal() {
             checked={showNoteIds}
             onChange={setShowNoteIds}
             title="Toggle note depth"
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="Default note font"
+          description="Title font for notes you create from now on"
+        >
+          <FontSelect
+            aria-label="Default note font"
+            value={defaultNoteFont}
+            onChange={setDefaultNoteFont}
+            light={false}
+            style={{ width: 148, flexShrink: 0 }}
           />
         </SettingRow>
 

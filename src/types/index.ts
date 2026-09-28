@@ -43,12 +43,12 @@ export interface Note {
 // Widgets never live on the root grid; deleting a note deletes its widgets.
 // ---------------------------------------------------------------------------
 
-export type WidgetType = "text" | "image";
+export type WidgetType = "text" | "image" | "shape";
 
-export type PlacementKind = "note" | "paste" | "text" | "image";
+export type PlacementKind = "note" | "paste" | "text" | "image" | "shape";
 
 export function isWidgetPlacement(kind: PlacementKind): boolean {
-  return kind === "text" || kind === "image";
+  return kind === "text" || kind === "image" || kind === "shape";
 }
 
 export function isNotePlacement(kind: PlacementKind): boolean {
@@ -76,6 +76,17 @@ export interface Widget {
   align: TextAlign;
   /** Image payload for `type === "image"` widgets */
   imageBlob?: Blob;
+  /** Which shape to draw for `type === "shape"` widgets */
+  shape?: string;
+  /** Fill colour for shapes / background colour for text blocks ("" = none) */
+  fill?: string;
+  /** Border colour for shapes and text blocks */
+  stroke?: string;
+  /** Border width in CSS px when one interior cell is BASE_CELL_PX (0 = none) */
+  strokeWidth?: number;
+  /** Mirror horizontally / vertically (shapes) */
+  flipH?: boolean;
+  flipV?: boolean;
   /** Stacking order on the host note; higher draws in front */
   zIndex: number;
   createdAt: Date;
@@ -97,6 +108,10 @@ export const DEFAULT_TITLE_FONT = DEFAULT_TEXT_FONT;
 export const DEFAULT_TITLE_FONT_SIZE = 16;
 export const DEFAULT_TEXT_ALIGN: TextAlign = "left";
 export const MIN_WIDGET_CELLS = 0.4;
+export const DEFAULT_SHAPE_FILL = "#5aa9ff";
+export const DEFAULT_SHAPE_STROKE = "#1a1a1a";
+export const DEFAULT_SHAPE_STROKE_WIDTH = 2;
+export const DEFAULT_TEXT_BG = "#ffffff";
 
 export type WidgetLayerMove = "backward" | "forward" | "back" | "front";
 

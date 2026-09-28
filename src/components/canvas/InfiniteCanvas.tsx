@@ -33,6 +33,7 @@ import { SettingsModal } from "./SettingsModal";
 import { SelectionFrame } from "./SelectionFrame";
 import { TextToolbar } from "./TextToolbar";
 import { ImageToolbar } from "./ImageToolbar";
+import { ShapeToolbar } from "./ShapeToolbar";
 
 export function InfiniteCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -72,6 +73,7 @@ export function InfiniteCanvas() {
       <CanvasControls />
       <TextToolbar />
       <ImageToolbar />
+      <ShapeToolbar />
       <NoteContextMenu />
       <ConfirmDeleteModal />
       <SettingsModal />

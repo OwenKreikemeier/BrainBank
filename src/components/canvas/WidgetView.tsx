@@ -4,6 +4,7 @@
 
 import type { ScreenRect, Widget } from "../../types";
 import { ImageBlockView } from "./ImageBlockView";
+import { ShapeBlockView } from "./ShapeBlockView";
 import { TextBlockView } from "./TextBlockView";
 
 interface WidgetViewProps {
@@ -22,6 +23,16 @@ export function WidgetView({
   if (widget.type === "image") {
     return (
       <ImageBlockView widget={widget} rect={rect} interactive={interactive} />
+    );
+  }
+  if (widget.type === "shape") {
+    return (
+      <ShapeBlockView
+        widget={widget}
+        rect={rect}
+        cellPx={cellPx}
+        interactive={interactive}
+      />
     );
   }
   return (

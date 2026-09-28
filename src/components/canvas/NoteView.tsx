@@ -5,8 +5,8 @@
 // (pointerEvents: none) so the canvas underneath still pans/zooms and accepts
 // child placement. The TITLE BAR is interactive (only for direct children of
 // the current frame that are large enough): hover darkens it, double-click
-// zooms into the note, press+drag moves the note, right-click opens the
-// context menu (rename lives there).
+// renames the title in place, press+drag moves the note, right-click opens
+// the context menu.
 // Corner handles allow resizing (opposite corner stays fixed, always square).
 // ---------------------------------------------------------------------------
 
@@ -29,7 +29,6 @@ import {
 import { useNotesStore } from "../../store/notesStore";
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { useUiStore } from "../../store/uiStore";
-import { useCanvasStore } from "../../store/canvasStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useNoteDrag } from "../../hooks/useNoteDrag";
 import { useNoteResize, type Corner } from "../../hooks/useNoteResize";
@@ -63,7 +62,6 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
   const [hovered, setHovered] = useState(false);
   const editingNoteId = useUiStore((s) => s.editingNoteId);
   const openContextMenu = useUiStore((s) => s.openContextMenu);
-  const enterNote = useCanvasStore((s) => s.enterNote);
   const { invalid: dragInvalid, dragHandlers } = useNoteDrag(note);
   const { invalid: resizeInvalid, handlersFor } = useNoteResize(note);
   const showNoteIds = useSettingsStore((s) => s.showNoteIds);
@@ -167,7 +165,9 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
           if (!isInteractive || isEditing) return;
           e.stopPropagation();
           e.preventDefault();
-          enterNote(note.id, e.clientX, e.clientY);
+          const ui = useUiStore.getState();
+          ui.selectNote(note.id, false);
+          ui.setEditingNote(note.id);
         }}
         onContextMenu={(e) => {
           if (!isInteractive) return;
@@ -308,12 +308,30 @@ function TitleEditor({
   const updateNote = useNotesStore((s) => s.updateNote);
   const setEditingNote = useUiStore((s) => s.setEditingNote);
 
+  function placeCaretAtEnd() {
+    const el = inputRef.current;
+    if (!el) return;
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  }
+
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {
       inputRef.current?.focus();
+      placeCaretAtEnd();
       readyRef.current = true;
     });
-    return () => window.cancelAnimationFrame(id);
+    // The pointerup that finished the double-click can select the title
+    // after focus. Put the caret back at the end once that event lands.
+    function onUp() {
+      placeCaretAtEnd();
+      window.removeEventListener("pointerup", onUp, true);
+    }
+    window.addEventListener("pointerup", onUp, true);
+    return () => {
+      window.cancelAnimationFrame(id);
+      window.removeEventListener("pointerup", onUp, true);
+    };
   }, []);
 
   function commit() {

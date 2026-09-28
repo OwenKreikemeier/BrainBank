@@ -33,6 +33,12 @@ interface NewWidgetInput {
   rotation?: number;
   align?: TextAlign;
   imageBlob?: Blob;
+  shape?: string;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  flipH?: boolean;
+  flipV?: boolean;
 }
 
 interface WidgetsStore {
@@ -108,11 +114,20 @@ export const useWidgetsStore = create<WidgetsStore>((set, get) => ({
     const raw = await db.widgets.toArray();
     const all: Widget[] = raw.map((w) => ({
       ...w,
-      type: w.type === "image" ? ("image" as const) : ("text" as const),
+      type:
+        w.type === "image" || w.type === "shape"
+          ? w.type
+          : ("text" as const),
       rotation: typeof w.rotation === "number" ? w.rotation : 0,
       align: w.align === "center" || w.align === "right" ? w.align : DEFAULT_TEXT_ALIGN,
       imageBlob: w.imageBlob instanceof Blob ? w.imageBlob : undefined,
       zIndex: typeof w.zIndex === "number" ? w.zIndex : 0,
+      shape: typeof w.shape === "string" ? w.shape : undefined,
+      fill: typeof w.fill === "string" ? w.fill : undefined,
+      stroke: typeof w.stroke === "string" ? w.stroke : undefined,
+      strokeWidth: typeof w.strokeWidth === "number" ? w.strokeWidth : undefined,
+      flipH: w.flipH === true,
+      flipV: w.flipV === true,
     }));
     const byId = new Map<string, Widget>();
     for (const w of all) byId.set(w.id, w);
@@ -140,6 +155,12 @@ export const useWidgetsStore = create<WidgetsStore>((set, get) => ({
       color: input.color ?? DEFAULT_TEXT_COLOR,
       align: input.align ?? DEFAULT_TEXT_ALIGN,
       imageBlob: input.imageBlob,
+      shape: input.shape,
+      fill: input.fill,
+      stroke: input.stroke,
+      strokeWidth: input.strokeWidth,
+      flipH: input.flipH ?? false,
+      flipV: input.flipV ?? false,
       zIndex: nextZIndex(get().getForNote(input.noteId)),
       createdAt: now,
       updatedAt: now,

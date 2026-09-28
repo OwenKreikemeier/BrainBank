@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { create } from "zustand";
+import { DEFAULT_TITLE_FONT, TEXT_FONTS } from "../types";
 
 export type Theme = "dark" | "light";
 
@@ -27,12 +28,21 @@ interface SettingsValues {
   theme: Theme;
   showNoteIds: boolean;
   showGridLines: boolean;
+  /** Title font applied to notes created after this is changed. */
+  defaultNoteFont: string;
 }
 
 interface SettingsStore extends SettingsValues {
   setTheme: (theme: Theme) => void;
   setShowNoteIds: (show: boolean) => void;
   setShowGridLines: (show: boolean) => void;
+  setDefaultNoteFont: (font: string) => void;
+}
+
+function noteFont(value: unknown): string {
+  return TEXT_FONTS.some((font) => font.value === value)
+    ? (value as string)
+    : DEFAULT_TITLE_FONT;
 }
 
 const STORAGE_KEY = "brainbank-settings";
@@ -46,12 +56,18 @@ function loadSettings(): SettingsValues {
         theme: parsed.theme === "light" ? "light" : "dark",
         showNoteIds: parsed.showNoteIds !== false,
         showGridLines: parsed.showGridLines !== false,
+        defaultNoteFont: noteFont(parsed.defaultNoteFont),
       };
     }
   } catch {
     // Corrupt or unavailable storage — fall through to defaults.
   }
-  return { theme: "dark", showNoteIds: true, showGridLines: true };
+  return {
+    theme: "dark",
+    showNoteIds: true,
+    showGridLines: true,
+    defaultNoteFont: DEFAULT_TITLE_FONT,
+  };
 }
 
 function persist(settings: SettingsValues) {
@@ -67,6 +83,7 @@ function values(s: SettingsStore): SettingsValues {
     theme: s.theme,
     showNoteIds: s.showNoteIds,
     showGridLines: s.showGridLines,
+    defaultNoteFont: s.defaultNoteFont,
   };
 }
 
@@ -86,5 +103,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setShowGridLines(showGridLines) {
     set({ showGridLines });
     persist({ ...values(get()), showGridLines });
+  },
+
+  setDefaultNoteFont(defaultNoteFont) {
+    const font = noteFont(defaultNoteFont);
+    set({ defaultNoteFont: font });
+    persist({ ...values(get()), defaultNoteFont: font });
   },
 }));

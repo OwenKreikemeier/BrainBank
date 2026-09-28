@@ -21,6 +21,7 @@ import {
   type PlacementKind,
 } from "../../types";
 import { NoteSearch } from "./NoteSearch";
+import { ShapePicker } from "./ShapePicker";
 
 export function CanvasControls() {
   const resetViewport = useCanvasStore((s) => s.resetViewport);
@@ -47,16 +48,26 @@ export function CanvasControls() {
     if (placementActive) {
       setPlacementActive(false);
       setToolMenuOpen(false);
+      useUiStore.getState().setShapePickerOpen(false);
       return;
     }
+    if (!toolMenuOpen) useUiStore.getState().setShapePickerOpen(false);
     setToolMenuOpen(!toolMenuOpen);
   }
 
   function pickTool(kind: PlacementKind) {
     if ((kind === "text" || kind === "image") && !insideNote) return;
     setToolMenuOpen(false);
+    useUiStore.getState().setShapePickerOpen(false);
     useUiStore.getState().setSelectedWidget(null);
     setPlacementActive(true, kind);
+  }
+
+  function pickShapeTool() {
+    if (!insideNote) return;
+    setToolMenuOpen(false);
+    useUiStore.getState().setSelectedWidget(null);
+    useUiStore.getState().setShapePickerOpen(true);
   }
 
   const hint = placementActive
@@ -64,14 +75,17 @@ export function CanvasControls() {
       ? "Drag to draw a text block · Esc to cancel"
       : placementKind === "image"
         ? "Drag to draw an image · Esc to cancel"
-        : placementKind === "paste"
-          ? "Drag to place the copied note · Esc to cancel"
-          : "Drag to draw a note · Esc to cancel"
+        : placementKind === "shape"
+          ? "Drag to draw the shape · Esc to cancel"
+          : placementKind === "paste"
+            ? "Drag to place the copied note · Esc to cancel"
+            : "Drag to draw a note · Esc to cancel"
     : null;
 
   return (
     <div data-hud>
       <NoteSearch light={light} />
+      <ShapePicker light={light} />
       {frameNote && (
         <div
           style={{
@@ -199,6 +213,7 @@ export function CanvasControls() {
           placementActive={placementActive}
           onToggle={togglePlus}
           onPick={pickTool}
+          onPickShape={pickShapeTool}
         />
       </div>
     </div>
@@ -219,6 +234,7 @@ function ToolTray({
   placementActive,
   onToggle,
   onPick,
+  onPickShape,
 }: {
   light: boolean;
   open: boolean;
@@ -227,6 +243,7 @@ function ToolTray({
   placementActive: boolean;
   onToggle: () => void;
   onPick: (kind: PlacementKind) => void;
+  onPickShape: () => void;
 }) {
   const tools = [
     {
@@ -251,6 +268,13 @@ function ToolTray({
       label: insideNote ? "Add text" : "Zoom into a note to add text",
       disabled: !insideNote,
       onClick: () => onPick("text"),
+    },
+    {
+      id: "shape",
+      symbol: <ShapeGlyph />,
+      label: insideNote ? "Add shape" : "Zoom into a note to add shapes",
+      disabled: !insideNote,
+      onClick: onPickShape,
     },
     {
       id: "image",
@@ -415,6 +439,24 @@ function PasteGlyph() {
     >
       <rect x="8" y="8" width="12" height="12" rx="2" />
       <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+    </svg>
+  );
+}
+
+function ShapeGlyph() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="8.5" cy="8.5" r="5.5" />
+      <path d="M11 13h9v8h-9z" />
     </svg>
   );
 }

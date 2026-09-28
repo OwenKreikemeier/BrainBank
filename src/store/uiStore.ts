@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { create } from "zustand";
-import type { NoteClipboard } from "../lib/noteClipboard";
+import type { NoteClipboard, NoteClipboardWidget } from "../lib/noteClipboard";
 import { useNotesStore } from "./notesStore";
 import { useWidgetsStore } from "./widgetsStore";
 
@@ -45,6 +45,12 @@ interface UiStore {
   toolMenuOpen: boolean;
   /** Copied note tree (nested notes + widgets), or null */
   noteClipboard: NoteClipboard | null;
+  /** Copied single widget (shape / text / image), or null */
+  widgetClipboard: NoteClipboardWidget | null;
+  /** Whether the shape gallery is open (rises above the tool tray) */
+  shapePickerOpen: boolean;
+  /** Shape drawn by the next "shape" placement */
+  placementShape: string;
   /** Whether the note search bar is expanded */
   searchOpen: boolean;
 
@@ -63,6 +69,9 @@ interface UiStore {
   setSelectionInvalid: (invalid: boolean) => void;
   setToolMenuOpen: (open: boolean) => void;
   setNoteClipboard: (clip: NoteClipboard | null) => void;
+  setWidgetClipboard: (clip: NoteClipboardWidget | null) => void;
+  setShapePickerOpen: (open: boolean) => void;
+  setPlacementShape: (shape: string) => void;
   setSearchOpen: (open: boolean) => void;
 }
 
@@ -82,6 +91,9 @@ export const useUiStore = create<UiStore>((set, get) => ({
   selectionInvalid: false,
   toolMenuOpen: false,
   noteClipboard: null,
+  widgetClipboard: null,
+  shapePickerOpen: false,
+  placementShape: "rectangle",
   searchOpen: false,
 
   setEditingNote(id) {
@@ -187,8 +199,19 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setToolMenuOpen(open) {
     set({ toolMenuOpen: open });
   },
+  // Copying a note replaces a copied widget and vice versa, so Ctrl+V always
+  // pastes whichever was copied last.
   setNoteClipboard(clip) {
-    set({ noteClipboard: clip });
+    set({ noteClipboard: clip, widgetClipboard: clip ? null : get().widgetClipboard });
+  },
+  setWidgetClipboard(clip) {
+    set({ widgetClipboard: clip, noteClipboard: clip ? null : get().noteClipboard });
+  },
+  setShapePickerOpen(open) {
+    set({ shapePickerOpen: open });
+  },
+  setPlacementShape(shape) {
+    set({ placementShape: shape });
   },
   setSearchOpen(open) {
     set({ searchOpen: open });

@@ -22,9 +22,16 @@ import { isValidNoteRect, isValidWidgetGeom } from "../lib/noteValidity";
 import {
   beginPastePlacement,
   copyNote,
+  copyWidget,
   noteIdForCopy,
   pasteNoteClipboard,
+  pasteWidgetClipboard,
 } from "../lib/noteClipboard";
+import {
+  DEFAULT_SHAPE_FILL,
+  DEFAULT_SHAPE_STROKE,
+  DEFAULT_SHAPE_STROKE_WIDTH,
+} from "../types";
 
 function isHudTarget(target: EventTarget | null): boolean {
   return (
@@ -88,7 +95,12 @@ export function useCanvasNavigation(
       if (e.button !== 0) return;
       if (isHudTarget(e.target)) return;
 
-      viewport.setPointerCapture(e.pointerId);
+      try {
+        viewport.setPointerCapture(e.pointerId);
+      } catch {
+        // Untrusted or already-released pointers can throw; placement/pan
+        // still proceeds via the window-level move/up path.
+      }
 
       if (canvas().placementActive) {
         isPlacing.current = true;
@@ -99,6 +111,7 @@ export function useCanvasNavigation(
       }
 
       ui().clearSelection();
+      if (ui().shapePickerOpen) ui().setShapePickerOpen(false);
 
       isPanning.current = true;
       lastPointer.current = { x: e.clientX, y: e.clientY };
@@ -128,7 +141,11 @@ export function useCanvasNavigation(
     }
 
     function onPointerUp(e: PointerEvent) {
-      viewport.releasePointerCapture(e.pointerId);
+      try {
+        viewport.releasePointerCapture(e.pointerId);
+      } catch {
+        // capture was never taken or already released
+      }
 
       if (isPlacing.current) {
         isPlacing.current = false;
@@ -138,13 +155,27 @@ export function useCanvasNavigation(
         if (isWidgetPlacement(placementKind)) {
           const live = liveRect(anchorCell.current, current);
           if (placementValid && frameId) {
+            const isShape = placementKind === "shape";
             const created = widgets().addWidget({
               noteId: frameId,
-              type: placementKind === "image" ? "image" : "text",
+              type:
+                placementKind === "image"
+                  ? "image"
+                  : isShape
+                    ? "shape"
+                    : "text",
               x: live.x,
               y: live.y,
               width: live.width,
               height: live.height,
+              ...(isShape
+                ? {
+                    shape: ui().placementShape,
+                    fill: DEFAULT_SHAPE_FILL,
+                    stroke: DEFAULT_SHAPE_STROKE,
+                    strokeWidth: DEFAULT_SHAPE_STROKE_WIDTH,
+                  }
+                : {}),
             });
             ui().setSelectedWidget(created.id);
           }
@@ -225,6 +256,10 @@ export function useCanvasNavigation(
           canvas().setPlacementActive(false);
           return;
         }
+        if (ui().shapePickerOpen) {
+          ui().setShapePickerOpen(false);
+          return;
+        }
         if (ui().toolMenuOpen) {
           ui().setToolMenuOpen(false);
           return;
@@ -257,6 +292,14 @@ export function useCanvasNavigation(
         if (ui().settingsOpen || ui().confirmDelete) return;
         const key = e.key.toLowerCase();
         if (key === "c") {
+          // A single selected widget (shape / text / image) wins; otherwise
+          // fall back to copying the selected note.
+          const widgetIds = ui().selectedWidgetIds;
+          if (widgetIds.length === 1 && ui().selectedNoteIds.length === 0) {
+            e.preventDefault();
+            copyWidget(widgetIds[0]);
+            return;
+          }
           const noteId = noteIdForCopy();
           if (!noteId) return;
           e.preventDefault();
@@ -264,6 +307,15 @@ export function useCanvasNavigation(
           return;
         }
         if (key === "v") {
+          const widgetClip = ui().widgetClipboard;
+          if (widgetClip) {
+            const frameId = canvas().frameId;
+            if (!frameId) return; // widgets only live inside a note
+            e.preventDefault();
+            const created = pasteWidgetClipboard(widgetClip, frameId);
+            ui().setSelectedWidget(created.id);
+            return;
+          }
           if (!ui().noteClipboard) return;
           e.preventDefault();
           beginPastePlacement();

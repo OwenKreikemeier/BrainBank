@@ -13,6 +13,8 @@ import {
   DEFAULT_TITLE_COLOR,
   DEFAULT_TITLE_FONT,
   DEFAULT_TITLE_FONT_SIZE,
+  INTERIOR_SPAN,
+  TITLE_BAR_CELLS,
   type Note,
   type NoteType,
   type TextAlign,
@@ -54,6 +56,12 @@ export interface NoteClipboardWidget {
   color: string;
   align: TextAlign;
   imageBlob?: Blob;
+  shape?: string;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  flipH?: boolean;
+  flipV?: boolean;
   zIndex: number;
 }
 
@@ -64,6 +72,35 @@ export interface NoteClipboard {
 
 function cloneBlob(blob: Blob | undefined): Blob | undefined {
   return blob instanceof Blob ? blob.slice() : undefined;
+}
+
+/** Snapshot a single widget so it can be pasted later (or into a note copy). */
+export function captureWidgetSnapshot(widget: Widget): NoteClipboardWidget {
+  return {
+    noteId: widget.noteId,
+    type: widget.type,
+    x: widget.x,
+    y: widget.y,
+    width: widget.width,
+    height: widget.height,
+    rotation: widget.rotation ?? 0,
+    content: widget.content ?? "",
+    fontFamily: widget.fontFamily ?? DEFAULT_TEXT_FONT,
+    fontSize: widget.fontSize ?? DEFAULT_TEXT_FONT_SIZE,
+    color: widget.color ?? DEFAULT_TEXT_COLOR,
+    align:
+      widget.align === "center" || widget.align === "right"
+        ? widget.align
+        : DEFAULT_TEXT_ALIGN,
+    imageBlob: cloneBlob(widget.imageBlob),
+    shape: widget.shape,
+    fill: widget.fill,
+    stroke: widget.stroke,
+    strokeWidth: widget.strokeWidth,
+    flipH: widget.flipH === true,
+    flipV: widget.flipV === true,
+    zIndex: typeof widget.zIndex === "number" ? widget.zIndex : 0,
+  };
 }
 
 export function captureNoteClipboard(noteId: string): NoteClipboard | null {
@@ -100,25 +137,7 @@ export function captureNoteClipboard(noteId: string): NoteClipboard | null {
   const clipWidgets: NoteClipboardWidget[] = [];
   for (const note of collected) {
     for (const widget of widgets.getForNote(note.id)) {
-      clipWidgets.push({
-        noteId: widget.noteId,
-        type: widget.type,
-        x: widget.x,
-        y: widget.y,
-        width: widget.width,
-        height: widget.height,
-        rotation: widget.rotation ?? 0,
-        content: widget.content ?? "",
-        fontFamily: widget.fontFamily ?? DEFAULT_TEXT_FONT,
-        fontSize: widget.fontSize ?? DEFAULT_TEXT_FONT_SIZE,
-        color: widget.color ?? DEFAULT_TEXT_COLOR,
-        align:
-          widget.align === "center" || widget.align === "right"
-            ? widget.align
-            : DEFAULT_TEXT_ALIGN,
-        imageBlob: cloneBlob(widget.imageBlob),
-        zIndex: typeof widget.zIndex === "number" ? widget.zIndex : 0,
-      });
+      clipWidgets.push(captureWidgetSnapshot(widget));
     }
   }
 
@@ -196,6 +215,12 @@ export function pasteNoteClipboard(
         color: widget.color,
         align: widget.align,
         imageBlob: cloneBlob(widget.imageBlob),
+        shape: widget.shape,
+        fill: widget.fill,
+        stroke: widget.stroke,
+        strokeWidth: widget.strokeWidth,
+        flipH: widget.flipH === true,
+        flipV: widget.flipV === true,
         zIndex: widget.zIndex,
         createdAt: now,
         updatedAt: now,
@@ -224,6 +249,54 @@ export function beginPastePlacement(): boolean {
   ui.setSelectedWidget(null);
   useCanvasStore.getState().setPlacementActive(true, "paste");
   return true;
+}
+
+/** Copy a single widget (shape / text block / image) to the clipboard. */
+export function copyWidget(widgetId: string): boolean {
+  const widget = useWidgetsStore.getState().getWidget(widgetId);
+  if (!widget) return false;
+  useUiStore.getState().setWidgetClipboard(captureWidgetSnapshot(widget));
+  return true;
+}
+
+/**
+ * Paste the copied widget into `noteId`, slightly offset from the original
+ * (PowerPoint-style) and clamped to the note's interior. Returns the new
+ * widget, which the caller should select.
+ */
+export function pasteWidgetClipboard(
+  clip: NoteClipboardWidget,
+  noteId: string
+): Widget {
+  const OFFSET = 0.5;
+  const width = Math.min(clip.width, INTERIOR_SPAN);
+  const height = Math.min(clip.height, INTERIOR_SPAN - TITLE_BAR_CELLS);
+  const x = Math.max(0, Math.min(clip.x + OFFSET, INTERIOR_SPAN - width));
+  const y = Math.max(
+    TITLE_BAR_CELLS,
+    Math.min(clip.y + OFFSET, INTERIOR_SPAN - height)
+  );
+  return useWidgetsStore.getState().addWidget({
+    noteId,
+    type: clip.type,
+    x,
+    y,
+    width,
+    height,
+    rotation: clip.rotation,
+    content: clip.content,
+    fontFamily: clip.fontFamily,
+    fontSize: clip.fontSize,
+    color: clip.color,
+    align: clip.align,
+    imageBlob: cloneBlob(clip.imageBlob),
+    shape: clip.shape,
+    fill: clip.fill,
+    stroke: clip.stroke,
+    strokeWidth: clip.strokeWidth,
+    flipH: clip.flipH,
+    flipV: clip.flipV,
+  });
 }
 
 /** Note to copy from the current selection or open settings menu. */

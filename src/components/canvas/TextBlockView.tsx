@@ -52,6 +52,14 @@ export function TextBlockView({
     }
   }, [selected, multi, interactive]);
 
+  // Optional background fill and border, scaled with zoom like the font.
+  const bg = widget.fill && widget.fill !== "" ? widget.fill : "transparent";
+  const strokePx = (widget.strokeWidth ?? 0) * (cellPx / BASE_CELL_PX);
+  const border =
+    strokePx > 0
+      ? `${Math.max(0.5, strokePx)}px solid ${widget.stroke ?? "#1a1a1a"}`
+      : "none";
+
   return (
     <WidgetChrome widget={widget} rect={rect} interactive={interactive} cursor="text">
       <textarea
@@ -65,9 +73,9 @@ export function TextBlockView({
           width: "100%",
           height: "100%",
           resize: "none",
-          border: "none",
+          border,
           outline: "none",
-          background: "transparent",
+          background: bg,
           padding: 4,
           boxSizing: "border-box",
           fontFamily: widget.fontFamily,
