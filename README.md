@@ -4,7 +4,7 @@ BrainBank is an infinite canvas of nested sticky notes. Each note is a square on
 
 Everything you create stays on this computer. Notes are not uploaded to GitHub. The desktop app can check GitHub for a newer installer and update itself, but that update replaces the program, not your notes.
 
-Current version: **0.2.0** (`src-tauri/tauri.conf.json`).
+Current version: **0.2.1** (`src-tauri/tauri.conf.json`).
 
 Repository: [github.com/OwenKreikemeier/BrainBank](https://github.com/OwenKreikemeier/BrainBank)
 

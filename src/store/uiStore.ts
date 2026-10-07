@@ -25,6 +25,8 @@ export interface ConfirmDeleteState {
 interface UiStore {
   /** Note currently being renamed (inline title editor), or null */
   editingNoteId: string | null;
+  /** Shape whose label is being edited, or null */
+  editingWidgetId: string | null;
   /** Open right-click menu, or null */
   contextMenu: ContextMenuState | null;
   /** Open delete-confirmation modal, or null */
@@ -55,6 +57,7 @@ interface UiStore {
   searchOpen: boolean;
 
   setEditingNote: (id: string | null) => void;
+  setEditingWidget: (id: string | null) => void;
   openContextMenu: (menu: ContextMenuState) => void;
   closeContextMenu: () => void;
   openConfirmDelete: (state: ConfirmDeleteState) => void;
@@ -81,6 +84,7 @@ function toggleId(list: string[], id: string): string[] {
 
 export const useUiStore = create<UiStore>((set, get) => ({
   editingNoteId: null,
+  editingWidgetId: null,
   contextMenu: null,
   confirmDelete: null,
   settingsOpen: false,
@@ -97,7 +101,16 @@ export const useUiStore = create<UiStore>((set, get) => ({
   searchOpen: false,
 
   setEditingNote(id) {
-    set({ editingNoteId: id });
+    set({
+      editingNoteId: id,
+      editingWidgetId: id ? null : get().editingWidgetId,
+    });
+  },
+  setEditingWidget(id) {
+    set({
+      editingWidgetId: id,
+      editingNoteId: id ? null : get().editingNoteId,
+    });
   },
   openContextMenu(menu) {
     set({ contextMenu: menu });

@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // ShapeToolbar — styling controls for the selected shape widget
 // ---------------------------------------------------------------------------
-// Change the shape itself, its fill (or no fill), border colour/width, and
-// flip it horizontally / vertically. Rotation uses the on-canvas handle.
+// Change the shape itself, its fill (or no fill), border colour/width, the
+// label's font, and flip it horizontally / vertically. Rotation uses the
+// on-canvas handle. Double-click the shape to edit its label.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
@@ -12,9 +13,12 @@ import { useSettingsStore } from "../../store/settingsStore";
 import {
   DEFAULT_SHAPE_FILL,
   DEFAULT_SHAPE_STROKE,
+  DEFAULT_TEXT_COLOR,
+  DEFAULT_TEXT_FONT,
+  DEFAULT_TEXT_FONT_SIZE,
 } from "../../types";
 import { LayerControls } from "./LayerControls";
-import { menuControlChrome } from "./FontSelect";
+import { FontSelect, menuControlChrome } from "./FontSelect";
 import { SHAPES, ShapeSvg, shapeLabel } from "./ShapeSvg";
 
 export function ShapeToolbar() {
@@ -48,6 +52,9 @@ export function ShapeToolbar() {
         zIndex: 12,
         display: "flex",
         alignItems: "center",
+        flexWrap: "wrap",
+        justifyContent: "center",
+        maxWidth: "calc(100vw - 24px)",
         gap: 8,
         padding: "8px 12px",
         borderRadius: 10,
@@ -111,6 +118,38 @@ export function ShapeToolbar() {
           aria-label="Border color"
           value={stroke}
           onChange={(e) => updateWidget(widget.id, { stroke: e.target.value })}
+          style={colorInputStyle}
+        />
+      </label>
+
+      <FontSelect
+        aria-label="Text font"
+        light={light}
+        value={widget.fontFamily || DEFAULT_TEXT_FONT}
+        onChange={(fontFamily) => updateWidget(widget.id, { fontFamily })}
+        style={{ width: 120 }}
+      />
+      <input
+        type="number"
+        aria-label="Text size"
+        min={8}
+        max={96}
+        title="Text size"
+        value={Math.round(widget.fontSize || DEFAULT_TEXT_FONT_SIZE)}
+        onChange={(e) =>
+          updateWidget(widget.id, {
+            fontSize: Math.min(96, Math.max(8, Number(e.target.value) || 8)),
+          })
+        }
+        style={{ ...controlStyle, ...menuControlChrome(light), width: 52 }}
+      />
+      <label style={labelStyle} title="Text color">
+        Text
+        <input
+          type="color"
+          aria-label="Text color"
+          value={widget.color || DEFAULT_TEXT_COLOR}
+          onChange={(e) => updateWidget(widget.id, { color: e.target.value })}
           style={colorInputStyle}
         />
       </label>

@@ -168,6 +168,7 @@ function clearUiForFrameChange() {
   ui.setLiftedNotes([]);
   ui.closeContextMenu();
   ui.setEditingNote(null);
+  ui.setEditingWidget(null);
   ui.setToolMenuOpen(false);
   ui.setSearchOpen(false);
 }

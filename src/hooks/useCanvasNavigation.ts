@@ -174,6 +174,7 @@ export function useCanvasNavigation(
                     fill: DEFAULT_SHAPE_FILL,
                     stroke: DEFAULT_SHAPE_STROKE,
                     strokeWidth: DEFAULT_SHAPE_STROKE_WIDTH,
+                    align: "center",
                   }
                 : {}),
             });
@@ -232,7 +233,14 @@ export function useCanvasNavigation(
       if (e.button !== 0) return;
       if (isHudTarget(e.target)) return;
       if (canvas().placementActive) return;
-      if (ui().editingNoteId || ui().settingsOpen || ui().confirmDelete) return;
+      if (
+        ui().editingNoteId ||
+        ui().editingWidgetId ||
+        ui().settingsOpen ||
+        ui().confirmDelete
+      ) {
+        return;
+      }
 
       const { pan, zoom, frameId } = canvas();
       for (const child of notes().getChildren(frameId)) {
@@ -246,7 +254,7 @@ export function useCanvasNavigation(
     }
 
     function onKeyDown(e: KeyboardEvent) {
-      if (ui().editingNoteId) return;
+      if (ui().editingNoteId || ui().editingWidgetId) return;
       if (e.key === "Escape") {
         if (ui().searchOpen) {
           ui().setSearchOpen(false);
