@@ -51,6 +51,7 @@ export function WidgetChrome({
   return (
     <div
       data-widget-interactive={interactive ? "" : undefined}
+      data-selected={interactive && selected ? "true" : undefined}
       style={{
         position: "absolute",
         left: rect.x,
@@ -75,6 +76,7 @@ export function WidgetChrome({
       {selected && interactive && (
         <div
           data-widget-interactive=""
+          data-object-handle=""
           {...bodyHandlers}
           title="Drag to move"
           style={{
@@ -108,6 +110,7 @@ export function WidgetChrome({
           <div
             key={corner}
             data-widget-interactive=""
+            data-object-handle=""
             {...handleHandlers(corner)}
             style={{
               position: "absolute",
@@ -129,6 +132,7 @@ export function WidgetChrome({
       {selected && interactive && !multi && (
         <div
           data-widget-interactive=""
+          data-object-handle=""
           {...rotateHandlers}
           title="Drag to rotate"
           style={{

@@ -42,6 +42,26 @@ function isHudTarget(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * An unselected note title or object. The press still selects it, and a drag
+ * pans the canvas. An already selected object keeps its own move/resize drag.
+ */
+function isSelectAndPanTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (
+    target.closest(
+      "[data-hud], [data-selection-interactive], [data-object-handle]"
+    )
+  ) {
+    return false;
+  }
+  if (target.closest("input, textarea, [contenteditable='true']")) return false;
+  if (!target.closest("[data-note-interactive], [data-widget-interactive]")) {
+    return false;
+  }
+  return target.closest("[data-selected='true']") === null;
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") return true;
@@ -52,8 +72,11 @@ export function useCanvasNavigation(
   viewportRef: React.RefObject<HTMLElement | null>
 ) {
   const isPanning = useRef(false);
+  const isPanPending = useRef(false);
+  const panFromObject = useRef(false);
   const isPlacing = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
+  const panOrigin = useRef({ x: 0, y: 0 });
   const anchorCell = useRef({ cx: 0, cy: 0 });
 
   useEffect(() => {
@@ -91,8 +114,38 @@ export function useCanvasNavigation(
       );
     }
 
+    function beginPan(e: PointerEvent) {
+      isPanPending.current = false;
+      isPanning.current = true;
+      try {
+        viewport.setPointerCapture(e.pointerId);
+      } catch {
+        // Untrusted or already-released pointers can throw; pan still
+        // proceeds from bubbled move/up events.
+      }
+      document.documentElement.classList.add("bb-panning");
+      viewport.style.cursor = "grabbing";
+    }
+
+    function swallowPanClick(ev: MouseEvent) {
+      window.removeEventListener("click", swallowPanClick, true);
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return;
+      // Selecting an object and dragging should still navigate. Capture waits
+      // until the pointer actually moves so a plain click can focus text or
+      // open an image.
+      if (isSelectAndPanTarget(e.target)) {
+        if (e.shiftKey) return;
+        isPanPending.current = true;
+        panFromObject.current = false;
+        lastPointer.current = { x: e.clientX, y: e.clientY };
+        panOrigin.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
       if (isHudTarget(e.target)) return;
 
       try {
@@ -114,7 +167,9 @@ export function useCanvasNavigation(
       if (ui().shapePickerOpen) ui().setShapePickerOpen(false);
 
       isPanning.current = true;
+      panFromObject.current = false;
       lastPointer.current = { x: e.clientX, y: e.clientY };
+      document.documentElement.classList.add("bb-panning");
       viewport.style.cursor = "grabbing";
     }
 
@@ -122,6 +177,20 @@ export function useCanvasNavigation(
       if (isPlacing.current) {
         updatePlacementPreview(e.clientX, e.clientY);
         return;
+      }
+      if (isPanPending.current && !isPanning.current) {
+        const dist = Math.hypot(
+          e.clientX - panOrigin.current.x,
+          e.clientY - panOrigin.current.y
+        );
+        if (dist >= 4) {
+          panFromObject.current = true;
+          lastPointer.current = {
+            x: panOrigin.current.x,
+            y: panOrigin.current.y,
+          };
+          beginPan(e);
+        }
       }
       if (isPanning.current) {
         const dx = e.clientX - lastPointer.current.x;
@@ -217,9 +286,16 @@ export function useCanvasNavigation(
         return;
       }
 
+      const pannedObject = panFromObject.current && isPanning.current;
+      isPanPending.current = false;
+      panFromObject.current = false;
       if (!isPanning.current) return;
       isPanning.current = false;
+      document.documentElement.classList.remove("bb-panning");
       viewport.style.cursor = "grab";
+      if (pannedObject) {
+        window.addEventListener("click", swallowPanClick, true);
+      }
     }
 
     function onWheel(e: WheelEvent) {
@@ -358,6 +434,8 @@ export function useCanvasNavigation(
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
+      document.documentElement.classList.remove("bb-panning");
+      window.removeEventListener("click", swallowPanClick, true);
       viewport.removeEventListener("pointerdown", onPointerDown);
       viewport.removeEventListener("pointermove", onPointerMove);
       viewport.removeEventListener("pointerup", onPointerUp);

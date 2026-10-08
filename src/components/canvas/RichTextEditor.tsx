@@ -4,10 +4,9 @@
 
 import { useEffect, useRef } from "react";
 import {
+  applyFormat,
   contentToHtml,
-  getHighlightColor,
   htmlToStored,
-  isHighlightColor,
   placeCaretAtEnd,
   plainText,
 } from "../../lib/richText";
@@ -99,10 +98,52 @@ export function RichTextEditor({
     };
   }, [caretAtEnd]);
 
-  function persistLive() {
-    const stored = readStored();
-    if (stored !== contentRef.current) onChangeRef.current?.(stored);
+  function markupCount(html: string): number {
+    return (html.match(/<(b|u|mark)\b/gi) || []).length;
   }
+
+function persistLive() {
+    const stored = readStored();
+    if (stored === contentRef.current) return;
+    contentRef.current = stored;
+    onChangeRef.current?.(stored);
+  }
+
+  // Only the selected text box is an editing host. Leaving every box
+  // contentEditable lets the browser drop highlight markup when the font
+  // shrinks on zoom-out, and that change was then saved.
+  const editing = editable && (singleLine || autoFocus);
+  const fontSize = style?.fontSize;
+  const visibility = style?.visibility;
+  const editingRef = useRef(editing);
+
+  useEffect(() => {
+    const wasEditing = editingRef.current;
+    editingRef.current = editing;
+    if (!wasEditing || editing || singleLine) return;
+    const el = ref.current;
+    if (!el) return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && sel.anchorNode && el.contains(sel.anchorNode)) {
+      sel.removeAllRanges();
+    }
+    if (document.activeElement === el) el.blur();
+    writeHtml(contentRef.current);
+  }, [editing, singleLine]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const id = window.requestAnimationFrame(() => {
+      const node = ref.current;
+      if (!node) return;
+      const stored = contentRef.current;
+      const live = htmlToStored(node.innerHTML);
+      if (plainText(live) !== plainText(stored)) return;
+      if (markupCount(live) < markupCount(stored)) writeHtml(stored);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [fontSize, visibility]);
 
   return (
     <div
@@ -113,12 +154,31 @@ export function RichTextEditor({
       role="textbox"
       aria-multiline={singleLine ? undefined : true}
       aria-label={singleLine ? "Shape text" : "Text"}
-      contentEditable={editable}
+      contentEditable={editing}
       suppressContentEditableWarning
       data-empty={plainText(content).trim() ? "false" : "true"}
       data-placeholder={placeholder}
       spellCheck
-      onInput={() => {
+      onInput={(e) => {
+        const inputType = e.nativeEvent instanceof InputEvent ? e.nativeEvent.inputType : "";
+        const live = readStored();
+        const stored = contentRef.current;
+        // A highlight command reports an empty inputType. That is a real edit.
+        if (ref.current?.dataset.bbFormatting) {
+          persistLive();
+          return;
+        }
+        // Zoom can rewrite the editor and drop highlight markup without a
+        // real edit. A formatting command adds markup, so only put the saved
+        // text back when formatting disappeared.
+        if (
+          !inputType &&
+          plainText(live) === plainText(stored) &&
+          markupCount(live) < markupCount(stored)
+        ) {
+          writeHtml(stored);
+          return;
+        }
         if (ref.current) {
           ref.current.dataset.empty = plainText(ref.current.innerText).trim() ? "false" : "true";
         }
@@ -153,25 +213,17 @@ export function RichTextEditor({
         const key = e.key.toLowerCase();
         if (mod && !e.altKey && key === "b") {
           e.preventDefault();
-          document.execCommand("bold");
-          persistLive();
+          applyFormat(widgetId, "bold", { singleLine, content: contentRef.current });
           return;
         }
         if (mod && !e.altKey && key === "u") {
           e.preventDefault();
-          document.execCommand("underline");
-          persistLive();
+          applyFormat(widgetId, "underline", { singleLine, content: contentRef.current });
           return;
         }
         if (mod && e.altKey && key === "h") {
           e.preventDefault();
-          const highlighted = isHighlightColor(document.queryCommandValue("backColor") || "");
-          document.execCommand(
-            "backColor",
-            false,
-            highlighted ? "transparent" : getHighlightColor()
-          );
-          persistLive();
+          applyFormat(widgetId, "highlight", { singleLine, content: contentRef.current });
           return;
         }
         if (!singleLine) return;
@@ -193,8 +245,9 @@ export function RichTextEditor({
         whiteSpace: singleLine ? "nowrap" : "pre-wrap",
         overflowWrap: "break-word",
         wordBreak: "break-word",
-        cursor: editable ? "text" : "inherit",
+        cursor: editing ? "text" : "inherit",
         ...style,
+        userSelect: editing ? "text" : "none",
       }}
     />
   );

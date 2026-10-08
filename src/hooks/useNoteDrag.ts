@@ -2,10 +2,10 @@
 // useNoteDrag — drag a note by its title bar
 // ---------------------------------------------------------------------------
 // Shift+click toggles the note in the selection. A regular click on an
-// unselected note selects it and stops there — drag only starts if the
-// note is already selected. Drag then moves every selected note and text
-// box together. The group follows the cursor smoothly. A red outline means
-// the live position overlaps something; on release notes snap to cells, or
+// unselected note selects it; dragging that same press pans the canvas.
+// Dragging an already selected note moves every selected note and text box
+// together. The group follows the cursor smoothly. A red outline means the
+// live position overlaps something; on release notes snap to cells, or
 // revert if that snap would still be illegal.
 // ---------------------------------------------------------------------------
 
@@ -80,7 +80,11 @@ export function useNoteDrag(note: Note) {
     // The second press of a double-click must not start a drag.
     if (secondPress || e.detail >= 2) return;
 
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Untrusted pointers can throw; the drag still tracks pointermove.
+    }
     const captured = captureSelection();
     const snap = captured.notes.length > 0 ? captured : fallbackSnap(note);
     ui.setLiftedNotes(snap.notes.map((n) => n.id));

@@ -159,6 +159,7 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
       {/* Title bar */}
       <div
         data-note-interactive={isInteractive ? "" : undefined}
+        data-selected={isInteractive && selected ? "true" : undefined}
         onPointerEnter={() => isInteractive && setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         onDoubleClick={(e) => {
@@ -254,6 +255,7 @@ export function NoteView({ note, rect, interactive }: NoteViewProps) {
           <div
             key={corner}
             data-note-interactive=""
+            data-object-handle=""
             {...handlersFor(corner)}
             style={cornerHandleStyle(corner)}
           />

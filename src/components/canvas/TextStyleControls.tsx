@@ -62,6 +62,7 @@ export function TextStyleControls({
         label="Bold"
         title="Bold (Ctrl+B)"
         pressed={bold}
+        onMouseDown={() => rememberSelection(widgetId)}
         onClick={() => run("bold")}
       >
         <span style={{ fontWeight: 800 }}>B</span>
@@ -70,6 +71,7 @@ export function TextStyleControls({
         label="Underline"
         title="Underline (Ctrl+U)"
         pressed={underline}
+        onMouseDown={() => rememberSelection(widgetId)}
         onClick={() => run("underline")}
       >
         <span style={{ textDecoration: "underline" }}>U</span>
@@ -78,6 +80,7 @@ export function TextStyleControls({
         label="Highlight"
         title="Highlight (Ctrl+Alt+H)"
         pressed={highlight}
+        onMouseDown={() => rememberSelection(widgetId)}
         onClick={() => run("highlight")}
       >
         <span
@@ -122,12 +125,14 @@ function FormatButton({
   label,
   title,
   pressed,
+  onMouseDown,
   onClick,
   children,
 }: {
   label: string;
   title: string;
   pressed: boolean;
+  onMouseDown: () => void;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -137,7 +142,10 @@ function FormatButton({
       title={title}
       aria-label={label}
       aria-pressed={pressed}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onMouseDown();
+      }}
       onClick={onClick}
       style={{
         width: 28,

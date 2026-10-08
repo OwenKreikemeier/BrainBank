@@ -60,10 +60,22 @@ function hexFromCss(value: string): string | null {
   return `#${hex}`;
 }
 
-/** A real highlight, ignoring white and fully transparent backgrounds. */
+/** A real highlight, ignoring white, black, and fully transparent backgrounds. */
 export function isHighlightColor(value: string): boolean {
   const hex = hexFromCss(value);
-  return !!hex && hex !== "#ffffff";
+  return !!hex && hex !== "#ffffff" && hex !== "#000000";
+}
+
+function elementHighlight(el: Element | null, stop: HTMLElement): string | null {
+  let cur: Element | null = el;
+  while (cur && cur !== stop) {
+    if (cur instanceof HTMLElement) {
+      const hex = hexFromCss(cur.style.backgroundColor);
+      if (hex && hex !== "#ffffff") return hex;
+    }
+    cur = cur.parentElement;
+  }
+  return null;
 }
 
 function serializeChildren(node: Node): string {
@@ -94,10 +106,11 @@ function serializeNode(node: Node): string {
     Number(weight) >= 600;
   const underline =
     tag === "U" || (el.style.textDecoration || "").includes("underline");
-  const bg =
-    tag === "MARK" || tag === "SPAN" || tag === "FONT"
-      ? hexFromCss(el.style.backgroundColor)
-      : null;
+  // backColor paints whichever element holds the selection, including an
+  // existing <b> or <u>, so the color has to be kept from any tag.
+  const bg = isHighlightColor(el.style.backgroundColor)
+    ? hexFromCss(el.style.backgroundColor)
+    : null;
   if (bg) inner = `<mark style="background-color:${bg}">${inner}</mark>`;
   if (underline && tag !== "U") inner = `<u>${inner}</u>`;
   if (tag === "U") inner = `<u>${inner}</u>`;
@@ -182,6 +195,13 @@ function selectionInside(editor: HTMLElement): boolean {
   return !!node && editor.contains(node);
 }
 
+function anchorElement(): Element | null {
+  const sel = window.getSelection();
+  const node = sel?.anchorNode;
+  if (!node) return null;
+  return node instanceof Element ? node : node.parentElement;
+}
+
 export function formatState(editor: HTMLElement | null): {
   bold: boolean;
   underline: boolean;
@@ -190,15 +210,77 @@ export function formatState(editor: HTMLElement | null): {
   if (!editor || document.activeElement !== editor || !selectionInside(editor)) {
     return { bold: false, underline: false, highlight: false };
   }
+  const commandColor = hexFromCss(document.queryCommandValue("backColor") || "");
+  const boxColor = hexFromCss(editor.style.backgroundColor);
+  const pendingHighlight =
+    !!commandColor &&
+    commandColor !== "#ffffff" &&
+    commandColor !== "#000000" &&
+    commandColor !== boxColor;
   return {
     bold: document.queryCommandState("bold"),
     underline: document.queryCommandState("underline"),
-    highlight: isHighlightColor(document.queryCommandValue("backColor") || ""),
+    highlight: !!elementHighlight(anchorElement(), editor) || pendingHighlight,
   };
 }
 
+/** Tell the editor to save. A plain Event is treated as a zoom glitch and undone. */
 function syncEditor(editor: HTMLElement) {
-  editor.dispatchEvent(new Event("input", { bubbles: true }));
+  editor.dispatchEvent(
+    new InputEvent("input", { bubbles: true, inputType: "formatBold" })
+  );
+}
+
+function textOffset(root: HTMLElement, container: Node, offset: number): number {
+  const range = document.createRange();
+  range.selectNodeContents(root);
+  try {
+    range.setEnd(container, offset);
+  } catch {
+    return 0;
+  }
+  return range.toString().length;
+}
+
+function pointAt(
+  root: HTMLElement,
+  offset: number
+): { node: Node; offset: number } | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let left = offset;
+  let last: Text | null = null;
+  let current = walker.nextNode() as Text | null;
+  while (current) {
+    last = current;
+    const len = current.textContent?.length ?? 0;
+    if (left <= len) return { node: current, offset: left };
+    left -= len;
+    current = walker.nextNode() as Text | null;
+  }
+  if (last) return { node: last, offset: last.textContent?.length ?? 0 };
+  return null;
+}
+
+function selectionOffsets(root: HTMLElement): { start: number; end: number } | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !selectionInside(root)) return null;
+  const range = sel.getRangeAt(0);
+  return {
+    start: textOffset(root, range.startContainer, range.startOffset),
+    end: textOffset(root, range.endContainer, range.endOffset),
+  };
+}
+
+function selectOffsets(root: HTMLElement, start: number, end: number) {
+  const a = pointAt(root, start);
+  const b = pointAt(root, Math.max(start, end));
+  if (!a || !b) return;
+  const range = document.createRange();
+  range.setStart(a.node, a.offset);
+  range.setEnd(b.node, b.offset);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
 }
 
 let savedRange: Range | null = null;
@@ -223,6 +305,84 @@ function restoreSelection(editor: HTMLElement): boolean {
   return true;
 }
 
+function applyCommand(
+  editor: HTMLElement,
+  kind: "bold" | "underline" | "highlight",
+  color: string,
+  forceColor: boolean
+) {
+  const offsets = selectionOffsets(editor);
+  const collapsed = !offsets || offsets.start === offsets.end;
+  const highlighted = formatState(editor).highlight;
+
+  // backColor fires an input event with an empty inputType. The editor
+  // treats that as a zoom glitch unless it knows this command is ours.
+  editor.dataset.bbFormatting = "1";
+  try {
+    if (kind === "bold") document.execCommand("bold");
+    else if (kind === "underline") document.execCommand("underline");
+    else if (!forceColor && highlighted) {
+      document.execCommand("backColor", false, "transparent");
+    } else {
+      document.execCommand("backColor", false, color);
+    }
+  } finally {
+    delete editor.dataset.bbFormatting;
+  }
+
+  // Rebuilding a collapsed caret drops the pending bold, underline, or
+  // highlight that the browser is holding for the next typed characters.
+  if (!collapsed && offsets) {
+    selectOffsets(editor, offsets.start, offsets.end);
+    if (kind === "highlight" && !forceColor && highlighted) {
+      unwrapCoveredHighlights(editor);
+      selectOffsets(editor, offsets.start, offsets.end);
+    }
+  }
+  syncEditor(editor);
+}
+
+/** True when every character in the element sits inside the selection. */
+function selectionCoversElement(range: Range, el: HTMLElement): boolean {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const first = walker.nextNode() as Text | null;
+  if (!first) return false;
+  let last = first;
+  let next = walker.nextNode() as Text | null;
+  while (next) {
+    last = next;
+    next = walker.nextNode() as Text | null;
+  }
+  try {
+    // 0 means the point is on the boundary or inside the range.
+    return (
+      range.comparePoint(first, 0) === 0 &&
+      range.comparePoint(last, last.textContent?.length ?? 0) === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Remove highlight wrappers that the selection completely covers. */
+function unwrapCoveredHighlights(editor: HTMLElement) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  const styled = [...editor.querySelectorAll<HTMLElement>("mark, span, font")].filter(
+    (el) =>
+      (el.tagName === "MARK" || isHighlightColor(el.style.backgroundColor)) &&
+      range.intersectsNode(el)
+  );
+  for (const el of styled) {
+    if (!selectionCoversElement(range, el)) continue;
+    const parent = el.parentNode;
+    if (!parent) continue;
+    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+  }
+}
+
 export function applyFormat(
   widgetId: string,
   kind: "bold" | "underline" | "highlight",
@@ -230,36 +390,18 @@ export function applyFormat(
 ): string | null {
   const editor = findRichEditor(widgetId);
   const color = opts.color ?? highlightColor;
-  if (editor) restoreSelection(editor);
-  const sel = window.getSelection();
-  const inEditor = !!editor && selectionInside(editor);
-  const collapsed = !sel || sel.isCollapsed;
-
-  if (editor && inEditor && (!collapsed || !opts.singleLine)) {
-    editor.focus();
-    if (kind === "bold") document.execCommand("bold");
-    else if (kind === "underline") document.execCommand("underline");
-    else if (!opts.forceColor && formatState(editor).highlight) {
-      document.execCommand("backColor", false, "transparent");
-    } else document.execCommand("backColor", false, color);
-    syncEditor(editor);
-    return null;
+  if (!editor || !editor.isContentEditable) {
+    return toggleWhole(opts.content, kind, color);
   }
 
-  if (editor && opts.singleLine) {
-    editor.focus();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    if (kind === "bold") document.execCommand("bold");
-    else if (kind === "underline") document.execCommand("underline");
-    else document.execCommand("backColor", false, color);
-    syncEditor(editor);
-    return null;
+  editor.focus();
+  if (!restoreSelection(editor) && !selectionInside(editor)) {
+    placeCaretAtEnd(editor);
   }
-
-  return toggleWhole(opts.content, kind, color);
+  // A selection is formatted in place. A caret only changes how the next
+  // characters are typed, the same way a word processor does it.
+  applyCommand(editor, kind, color, !!opts.forceColor);
+  return null;
 }
 
 export function placeCaretAtEnd(el: HTMLElement) {
