@@ -7,19 +7,22 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-/// The window corner icon and the taskbar icon are separate on Windows.
-/// Tauri sets the small (title-bar) icon from the bundle, which is why the
-/// window menu already matches the logo. The taskbar reads the big icon,
-/// which was never assigned, so it kept showing the old one. Load the icon
-/// embedded in the executable — the same artwork as the Start menu shortcut —
-/// and assign it as the taskbar icon.
+/// Windows draws the taskbar button from a snapshot taken when the button is
+/// created. That snapshot stays on the old icon even after the window icon is
+/// replaced. Load the brain embedded in the executable, assign it to the
+/// window, then remove and re-add the taskbar button so it is drawn again.
 #[cfg(windows)]
 fn apply_taskbar_icon(window: &tauri::WebviewWindow) {
+    use std::ffi::c_void;
+    use std::time::Duration;
+
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{HINSTANCE, LPARAM, WPARAM};
+    use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
-        LoadImageW, SendMessageW, ICON_BIG, IMAGE_FLAGS, IMAGE_ICON, LR_DEFAULTSIZE, WM_SETICON,
+        LoadImageW, SendMessageW, SetClassLongPtrW, GCLP_HICON, GCLP_HICONSM, ICON_BIG,
+        IMAGE_FLAGS, IMAGE_ICON, LR_DEFAULTSIZE, WM_SETICON,
     };
 
     let Ok(hwnd) = window.hwnd() else {
@@ -37,13 +40,36 @@ fn apply_taskbar_icon(window: &tauri::WebviewWindow) {
         let Ok(icon) = icon else {
             return;
         };
-        SendMessageW(
-            hwnd,
-            WM_SETICON,
-            Some(WPARAM(ICON_BIG as usize)),
-            Some(LPARAM(icon.0 as isize)),
-        );
+        let bits = icon.0 as isize;
+        SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(bits)));
+        SetClassLongPtrW(hwnd, GCLP_HICON, bits);
+        SetClassLongPtrW(hwnd, GCLP_HICONSM, bits);
+        refresh_taskbar_button(hwnd);
     }
+
+    let raw = hwnd.0 as isize;
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            refresh_taskbar_button(HWND(raw as *mut c_void));
+        }
+    });
+}
+
+#[cfg(windows)]
+unsafe fn refresh_taskbar_button(hwnd: windows::Win32::Foundation::HWND) {
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_SERVER};
+    use windows::Win32::UI::Shell::{ITaskbarList, TaskbarList};
+
+    let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList>(&TaskbarList, None, CLSCTX_SERVER) else {
+        return;
+    };
+    if taskbar.HrInit().is_err() {
+        return;
+    }
+    let _ = taskbar.DeleteTab(hwnd);
+    let _ = taskbar.AddTab(hwnd);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
