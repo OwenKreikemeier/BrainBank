@@ -15,3 +15,21 @@ html, body, #root {
   overscroll-behavior: none;
   background: #0f1117;
 }
+
+.bb-rich b,
+.bb-rich strong {
+  font-weight: 800;
+}
+
+.bb-rich mark {
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.bb-rich[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: currentColor;
+  opacity: 0.4;
+  pointer-events: none;
+}

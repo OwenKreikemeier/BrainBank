@@ -7,12 +7,13 @@
 // wrapping at the minimum size.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { BASE_CELL_PX, type ScreenRect, type Widget } from "../../types";
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { useUiStore } from "../../store/uiStore";
 import { fitTextFont } from "../../lib/fitTextFont";
 import { WidgetChrome } from "./WidgetChrome";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TextBlockViewProps {
   widget: Widget;
@@ -32,7 +33,6 @@ export function TextBlockView({
   );
   const selected = useUiStore((s) => s.selectedWidgetIds.includes(widget.id));
   const updateWidget = useWidgetsStore((s) => s.updateWidget);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const targetPx = Math.max(1, widget.fontSize * (cellPx / BASE_CELL_PX));
   const fitted = useMemo(
     () =>
@@ -46,12 +46,6 @@ export function TextBlockView({
     [widget.content, widget.fontFamily, targetPx, rect.w, rect.h]
   );
 
-  useEffect(() => {
-    if (selected && !multi && interactive) {
-      textareaRef.current?.focus();
-    }
-  }, [selected, multi, interactive]);
-
   // Optional background fill and border, scaled with zoom like the font.
   const bg = widget.fill && widget.fill !== "" ? widget.fill : "transparent";
   const strokePx = (widget.strokeWidth ?? 0) * (cellPx / BASE_CELL_PX);
@@ -62,30 +56,23 @@ export function TextBlockView({
 
   return (
     <WidgetChrome widget={widget} rect={rect} interactive={interactive} cursor="text">
-      <textarea
-        ref={textareaRef}
-        value={widget.content}
-        readOnly={!interactive || multi}
+      <RichTextEditor
+        widgetId={widget.id}
+        content={widget.content}
+        editable={interactive && !multi}
+        autoFocus={selected && !multi && interactive}
         placeholder={interactive ? "Type here" : ""}
-        onChange={(e) => updateWidget(widget.id, { content: e.target.value })}
-        onKeyDown={(e) => e.stopPropagation()}
+        onChange={(content) => updateWidget(widget.id, { content })}
         style={{
-          width: "100%",
-          height: "100%",
-          resize: "none",
           border,
-          outline: "none",
           background: bg,
           padding: 4,
-          boxSizing: "border-box",
           fontFamily: widget.fontFamily,
           fontSize: fitted.px,
           lineHeight: 1.25,
           color: widget.color,
           visibility: fitted.visible ? "visible" : "hidden",
           textAlign: widget.align ?? "left",
-          cursor: interactive ? "text" : "inherit",
-          overflow: "hidden",
         }}
       />
     </WidgetChrome>

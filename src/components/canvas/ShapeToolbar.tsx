@@ -18,6 +18,7 @@ import {
   DEFAULT_TEXT_FONT_SIZE,
 } from "../../types";
 import { LayerControls } from "./LayerControls";
+import { TextStyleControls } from "./TextStyleControls";
 import { FontSelect, menuControlChrome } from "./FontSelect";
 import { SHAPES, ShapeSvg, shapeLabel } from "./ShapeSvg";
 
@@ -63,6 +64,7 @@ export function ShapeToolbar() {
         boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
         color: "rgba(255,255,255,0.9)",
         fontSize: 13,
+        overflow: "visible",
       }}
     >
       <ShapeSelect
@@ -143,6 +145,13 @@ export function ShapeToolbar() {
         }
         style={{ ...controlStyle, ...menuControlChrome(light), width: 52 }}
       />
+      <TextStyleControls
+        widgetId={widget.id}
+        content={widget.content}
+        singleLine
+        onChangeContent={(content) => updateWidget(widget.id, { content })}
+      />
+
       <label style={labelStyle} title="Text color">
         Text
         <input
@@ -154,38 +163,36 @@ export function ShapeToolbar() {
         />
       </label>
 
-      <div style={{ display: "flex", gap: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
         <button
+          type="button"
           onClick={() => updateWidget(widget.id, { flipH: !widget.flipH })}
           title="Flip horizontally"
           aria-label="Flip horizontally"
+          aria-pressed={!!widget.flipH}
           style={{
-            ...controlStyle,
-            width: 28,
-            padding: "4px 0",
-            cursor: "pointer",
+            ...iconButtonStyle,
             background: widget.flipH
               ? "rgba(80,160,255,0.4)"
-              : controlStyle.background,
+              : iconButtonStyle.background,
           }}
         >
-          <FlipGlyph vertical={false} />
+          <FlipHorizontalGlyph />
         </button>
         <button
+          type="button"
           onClick={() => updateWidget(widget.id, { flipV: !widget.flipV })}
           title="Flip vertically"
           aria-label="Flip vertically"
+          aria-pressed={!!widget.flipV}
           style={{
-            ...controlStyle,
-            width: 28,
-            padding: "4px 0",
-            cursor: "pointer",
+            ...iconButtonStyle,
             background: widget.flipV
               ? "rgba(80,160,255,0.4)"
-              : controlStyle.background,
+              : iconButtonStyle.background,
           }}
         >
-          <FlipGlyph vertical />
+          <FlipVerticalGlyph />
         </button>
       </div>
 
@@ -309,22 +316,49 @@ function ShapeSelect({
   );
 }
 
-function FlipGlyph({ vertical }: { vertical: boolean }) {
+const iconButtonStyle: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  padding: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  background: "rgba(255,255,255,0.08)",
+  color: "inherit",
+  border: "1px solid rgba(255,255,255,0.15)",
+  borderRadius: 6,
+};
+
+const flipIconProps = {
+  width: 16,
+  height: 16,
+  viewBox: "0 0 16 16",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.6,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true,
+  style: { display: "block" },
+};
+
+function FlipHorizontalGlyph() {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinejoin="round"
-      style={{ transform: vertical ? "rotate(90deg)" : undefined }}
-      aria-hidden
-    >
-      <path d="M12 3v18" strokeDasharray="2.5 2.5" />
-      <path d="M9 7 3 12l6 5V7z" fill="currentColor" stroke="none" />
-      <path d="M15 7l6 5-6 5V7z" />
+    <svg {...flipIconProps}>
+      <path d="M8 2.25v11.5" />
+      <path d="M6.35 4.15 2.35 8l4 3.85z" fill="currentColor" stroke="none" />
+      <path d="M9.65 4.15 13.65 8l-4 3.85z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function FlipVerticalGlyph() {
+  return (
+    <svg {...flipIconProps}>
+      <path d="M2.25 8h11.5" />
+      <path d="M4.15 6.35 8 2.35l3.85 4z" fill="currentColor" stroke="none" />
+      <path d="M4.15 9.65 8 13.65l3.85-4z" fill="currentColor" stroke="none" />
     </svg>
   );
 }

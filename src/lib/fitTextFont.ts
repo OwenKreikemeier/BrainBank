@@ -5,6 +5,8 @@
 // wrapping, the caller should hide the text instead of folding it.
 // ---------------------------------------------------------------------------
 
+import { contentToHtml, isRichContent, plainText } from "./richText";
+
 const MIN_FIT_PX = 1;
 
 let probe: HTMLTextAreaElement | null = null;
@@ -49,6 +51,48 @@ function fits(
   return el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
 }
 
+let richProbe: HTMLDivElement | null = null;
+
+function getRichProbe(): HTMLDivElement {
+  if (!richProbe) {
+    richProbe = document.createElement("div");
+    richProbe.className = "bb-rich";
+    richProbe.setAttribute("aria-hidden", "true");
+    richProbe.style.cssText = [
+      "position:absolute",
+      "left:-99999px",
+      "top:0",
+      "visibility:hidden",
+      "overflow:hidden",
+      "padding:4px",
+      "border:none",
+      "line-height:1.25",
+      "box-sizing:border-box",
+      "white-space:pre-wrap",
+      "overflow-wrap:break-word",
+      "word-break:break-word",
+    ].join(";");
+    document.body.appendChild(richProbe);
+  }
+  return richProbe;
+}
+
+function fitsRich(
+  el: HTMLDivElement,
+  fontPx: number,
+  fontFamily: string,
+  content: string,
+  widthPx: number,
+  heightPx: number
+): boolean {
+  el.style.width = `${Math.max(1, widthPx)}px`;
+  el.style.height = `${Math.max(1, heightPx)}px`;
+  el.style.fontSize = `${fontPx}px`;
+  el.style.fontFamily = fontFamily;
+  el.innerHTML = contentToHtml(content);
+  return el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
+}
+
 export function fitTextFont(opts: {
   content: string;
   fontFamily: string;
@@ -59,25 +103,28 @@ export function fitTextFont(opts: {
 }): { px: number; visible: boolean } {
   const minPx = opts.minPx ?? MIN_FIT_PX;
   const target = Math.max(minPx, opts.targetPx);
-  if (!opts.content.trim()) return { px: target, visible: true };
+  if (!plainText(opts.content).trim()) return { px: target, visible: true };
   if (opts.widthPx < 1 || opts.heightPx < 1) {
     return { px: minPx, visible: false };
   }
 
-  const el = getProbe();
-  if (fits(el, target, opts.fontFamily, opts.content, opts.widthPx, opts.heightPx)) {
-    return { px: target, visible: true };
-  }
-  if (!fits(el, minPx, opts.fontFamily, opts.content, opts.widthPx, opts.heightPx)) {
-    return { px: minPx, visible: false };
-  }
+  const rich = isRichContent(opts.content);
+  const richEl = rich ? getRichProbe() : null;
+  const plainEl = rich ? null : getProbe();
+  const check = (px: number) =>
+    richEl
+      ? fitsRich(richEl, px, opts.fontFamily, opts.content, opts.widthPx, opts.heightPx)
+      : fits(plainEl!, px, opts.fontFamily, opts.content, opts.widthPx, opts.heightPx);
+
+  if (check(target)) return { px: target, visible: true };
+  if (!check(minPx)) return { px: minPx, visible: false };
 
   let lo = minPx;
   let hi = target;
   let best = minPx;
   for (let i = 0; i < 16; i++) {
     const mid = (lo + hi) / 2;
-    if (fits(el, mid, opts.fontFamily, opts.content, opts.widthPx, opts.heightPx)) {
+    if (check(mid)) {
       best = mid;
       lo = mid;
     } else {
@@ -116,7 +163,13 @@ function lineFits(
 ): boolean {
   el.style.fontSize = `${fontPx}px`;
   el.style.fontFamily = fontFamily ?? "";
-  el.textContent = content;
+  if (isRichContent(content)) {
+    el.className = "bb-rich";
+    el.innerHTML = contentToHtml(content);
+  } else {
+    el.className = "";
+    el.textContent = content;
+  }
   return el.getBoundingClientRect().width <= widthPx + 0.5;
 }
 
@@ -129,7 +182,7 @@ export function fitSingleLineFont(opts: {
   fontFamily?: string;
 }): { px: number; visible: boolean } {
   const minPx = opts.minPx ?? MIN_FIT_PX;
-  if (!opts.content.trim()) return { px: Math.max(minPx, opts.targetPx), visible: true };
+  if (!plainText(opts.content).trim()) return { px: Math.max(minPx, opts.targetPx), visible: true };
   if (opts.widthPx < 1 || opts.targetPx < minPx) {
     return { px: minPx, visible: false };
   }

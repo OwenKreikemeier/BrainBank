@@ -8,6 +8,7 @@ import { useSettingsStore } from "../../store/settingsStore";
 import { DEFAULT_SHAPE_STROKE, DEFAULT_TEXT_BG, type TextAlign } from "../../types";
 import { LayerControls } from "./LayerControls";
 import { FontSelect, menuControlChrome } from "./FontSelect";
+import { TextStyleControls } from "./TextStyleControls";
 
 export function TextToolbar() {
   const selectedWidgetId = useUiStore((s) => s.selectedWidgetId);
@@ -47,6 +48,7 @@ export function TextToolbar() {
         boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
         color: "rgba(255,255,255,0.9)",
         fontSize: 13,
+        overflow: "visible",
       }}
     >
       <FontSelect
@@ -135,6 +137,12 @@ export function TextToolbar() {
           style={colorInputStyle}
         />
       </label>
+
+      <TextStyleControls
+        widgetId={widget.id}
+        content={widget.content}
+        onChangeContent={(content) => updateWidget(widget.id, { content })}
+      />
 
       <div style={{ display: "flex", gap: 2 }}>
         {ALIGN_OPTIONS.map((option) => (

@@ -7,7 +7,7 @@
 // Double-click the shape to type a label, the same way a note title is renamed.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { type MouseEvent } from "react";
 import {
   BASE_CELL_PX,
   DEFAULT_SHAPE_FILL,
@@ -21,8 +21,10 @@ import {
 import { useUiStore } from "../../store/uiStore";
 import { useWidgetsStore } from "../../store/widgetsStore";
 import { fitSingleLineFont } from "../../lib/fitTextFont";
+import { contentToHtml, isRichContent, plainText } from "../../lib/richText";
 import { WidgetChrome } from "./WidgetChrome";
 import { ShapeSvg } from "./ShapeSvg";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface ShapeBlockViewProps {
   widget: Widget;
@@ -99,8 +101,9 @@ export function ShapeBlockView({
           <ShapeLabelEditor widget={widget} fontSize={targetPx} color={color} fontFamily={fontFamily} />
         ) : (
           fitted.visible &&
-          label.trim() !== "" && (
+          plainText(label).trim() !== "" && (
             <span
+              className="bb-rich"
               style={{
                 maxWidth: "100%",
                 fontFamily,
@@ -115,9 +118,8 @@ export function ShapeBlockView({
                 pointerEvents: "none",
                 userSelect: "none",
               }}
-            >
-              {label}
-            </span>
+              dangerouslySetInnerHTML={{ __html: contentToHtml(label) }}
+            />
           )
         )}
       </div>
@@ -136,85 +138,37 @@ function ShapeLabelEditor({
   fontFamily: string;
   color: string;
 }) {
-  const [value, setValue] = useState(widget.content ?? "");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const readyRef = useRef(false);
   const updateWidget = useWidgetsStore((s) => s.updateWidget);
   const setEditingWidget = useUiStore((s) => s.setEditingWidget);
 
-  function placeCaretAtEnd() {
-    const el = inputRef.current;
-    if (!el) return;
-    const end = el.value.length;
-    el.setSelectionRange(end, end);
-  }
-
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      placeCaretAtEnd();
-      readyRef.current = true;
-    });
-    function onUp() {
-      placeCaretAtEnd();
-      window.removeEventListener("pointerup", onUp, true);
-    }
-    window.addEventListener("pointerup", onUp, true);
-    return () => {
-      window.cancelAnimationFrame(id);
-      window.removeEventListener("pointerup", onUp, true);
-    };
-  }, []);
-
-  function commit() {
-    updateWidget(widget.id, { content: value.trim(), align: "center" });
+  function commit(value: string) {
+    const next = isRichContent(value) ? value : value.trim();
+    updateWidget(widget.id, { content: next, align: "center" });
     setEditingWidget(null);
   }
 
   return (
-    <input
-      ref={inputRef}
-      data-widget-interactive=""
-      aria-label="Shape text"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onPointerDown={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
-      onBlur={() => {
-        if (!readyRef.current) {
-          inputRef.current?.focus();
-          return;
-        }
-        commit();
-      }}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") {
-          e.preventDefault();
-          commit();
-        }
-        if (e.key === "Escape") {
-          e.preventDefault();
-          setEditingWidget(null);
-        }
-      }}
+    <RichTextEditor
+      widgetId={widget.id}
+      content={widget.content ?? ""}
+      editable
+      singleLine
+      autoFocus
+      caretAtEnd
+      onCommit={commit}
+      onCancel={() => setEditingWidget(null)}
       style={{
-        width: "100%",
         textAlign: "center",
         fontSize,
         fontFamily,
-        fontWeight: 600,
+        fontWeight: 400,
         color,
         caretColor: color,
         background: "transparent",
         border: "none",
-        outline: "none",
-        boxShadow: "none",
         padding: 0,
         margin: 0,
         lineHeight: 1.15,
-        appearance: "none",
-        WebkitAppearance: "none",
       }}
     />
   );
