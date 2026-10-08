@@ -9,6 +9,16 @@
 
   <body>
     <div id="root"></div>
+    <script>
+      // Paint white before React on the desktop app so the canvas never flashes through.
+      if (window.__TAURI_INTERNALS__) {
+        var white = "#ffffff";
+        document.documentElement.style.background = white;
+        document.body.style.background = white;
+        var root = document.getElementById("root");
+        if (root) root.style.background = white;
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

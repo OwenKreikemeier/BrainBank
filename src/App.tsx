@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // App — root component
 // ---------------------------------------------------------------------------
-// Mounts the InfiniteCanvas. The desktop app fades the wordmark in and out
-// over the canvas while it opens.
+// Mounts the InfiniteCanvas. The desktop app opens on a white field, fades
+// the wordmark in, then fades that field away to reveal the canvas.
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";

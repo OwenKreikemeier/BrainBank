@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // SplashScreen — desktop launch screen
 // ---------------------------------------------------------------------------
-// Full-bleed black field with the wordmark, matching the logo artwork.
-// The mark fades in, holds, then fades out so the canvas is underneath.
+// The field is white from the first paint. Only the wordmark fades in, rising
+// a little as it appears. After a short hold, the logo and the white field
+// fade out together and the canvas underneath is revealed.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
@@ -10,16 +11,17 @@ import logo from "../assets/BrainBank_logo5-cutout.png";
 
 const FADE_MS = 700;
 const HOLD_MS = 1500;
+const RISE_PX = 22;
 
 export function SplashScreen({ onDone }: { onDone: () => void }) {
-  const [shown, setShown] = useState(false);
+  const [logoIn, setLogoIn] = useState(false);
   const [closing, setClosing] = useState(false);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => setShown(true));
+      window.requestAnimationFrame(() => setLogoIn(true));
     });
     const closeTimer = window.setTimeout(() => setClosing(true), FADE_MS + HOLD_MS);
     const doneTimer = window.setTimeout(
@@ -33,13 +35,13 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
     };
   }, []);
 
-  const visible = shown && !closing;
-
   return (
     <div
       aria-hidden={closing}
       onTransitionEnd={(e) => {
-        if (e.propertyName === "opacity" && closing) onDoneRef.current();
+        if (e.target === e.currentTarget && e.propertyName === "opacity" && closing) {
+          onDoneRef.current();
+        }
       }}
       style={{
         position: "fixed",
@@ -48,9 +50,9 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#000000",
-        opacity: visible ? 1 : 0,
-        transition: `opacity ${FADE_MS}ms ease`,
+        background: "#ffffff",
+        opacity: closing ? 0 : 1,
+        transition: closing ? `opacity ${FADE_MS}ms ease` : "none",
         pointerEvents: closing ? "none" : "auto",
       }}
     >
@@ -62,6 +64,9 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
           width: "min(880px, 86vw)",
           height: "auto",
           userSelect: "none",
+          opacity: logoIn ? 1 : 0,
+          transform: logoIn ? "translateY(0)" : `translateY(${RISE_PX}px)`,
+          transition: `opacity ${FADE_MS}ms ease, transform ${FADE_MS}ms ease`,
         }}
       />
     </div>
